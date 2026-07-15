@@ -1,9 +1,10 @@
 # macOS
 .DS_Store
 
-# Редакторы
+# Редакторы / инструменты
 .vscode/
 .idea/
+.claude/
 
 # Python
 __pycache__/
