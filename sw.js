@@ -1,8 +1,11 @@
-/* Минимальный service worker: нужен, чтобы PWA ставилась на домашний
-   экран и открывалась быстро/офлайн. Кэшируем оболочку (index, app.js,
-   иконки), но НЕ кэшируем ответы Supabase — данные всегда свежие из сети. */
+/* Service worker: мгновенная загрузка оболочки (cache-first) и офлайн.
+   Данные Supabase НЕ кэшируем здесь — свежесть данных обеспечивает
+   app.js через localStorage (stale-while-revalidate).
 
-const CACHE = "myday-shell-v1";
+   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v2 → v3),
+   иначе пользователи залипнут на старой версии. */
+
+const CACHE = "myday-shell-v2";
 const SHELL = [
   ".",
   "index.html",
@@ -20,29 +23,40 @@ self.addEventListener("install", (e) => {
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
+  const req = e.request;
+  if (req.method !== "GET") return;
 
-  // Данные Supabase и шрифты — всегда из сети (не кэшируем данные дня).
-  if (url.hostname.endsWith("supabase.co") || url.hostname.endsWith("supabase.in")) {
-    return; // пусть браузер сходит в сеть как обычно
+  const url = new URL(req.url);
+
+  // Данные Supabase — всегда сеть, не трогаем (кэшем данных заведует app.js).
+  if (url.hostname.endsWith("supabase.co") || url.hostname.endsWith("supabase.in")) return;
+
+  // Другой origin (например, шрифты Google) — сеть с мягким откатом в кэш.
+  if (url.origin !== self.location.origin) {
+    e.respondWith(fetch(req).catch(() => caches.match(req)));
+    return;
   }
 
-  // Оболочка: сеть с откатом в кэш (stale-while-revalidate по-простому).
-  if (e.request.method !== "GET") return;
+  // Своя оболочка: cache-first + фоновое обновление кеша (stale-while-revalidate).
   e.respondWith(
-    fetch(e.request)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
-        return res;
-      })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match("index.html")))
+    caches.match(req).then((cached) => {
+      const network = fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => cached || caches.match("index.html"));
+      return cached || network;
+    })
   );
 });

@@ -111,6 +111,35 @@
   .add button:active{background:var(--surface)}
   .add button:disabled{opacity:.5;cursor:default}
 
+  /* now / next line */
+  .nownext{margin:-8px 2px 22px;font-size:14px;line-height:1.45;color:var(--muted);font-weight:500}
+  .nownext .cur{color:var(--text)}
+  .nownext .nx{color:var(--text)}
+  .nownext .at{font-family:'JetBrains Mono',monospace;color:var(--dawn)}
+  .nownext .free{color:var(--dawn)}
+
+  /* deadlines */
+  .deadlines{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+  .dl{display:flex;align-items:center;gap:12px;padding:11px 12px 11px 14px;border-radius:11px;cursor:pointer;user-select:none;transition:background .15s;border-left:2px solid var(--tag,var(--line))}
+  .dl:active{background:var(--surface)}
+  .dl.pending{opacity:.55}
+  .dl .dl-title{flex:1;font-size:15px;word-break:break-word}
+  .dl .dl-count{font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap;color:var(--tag,var(--muted))}
+  .dl.done-anim{opacity:.3}
+  .dl-add{display:flex;gap:9px;margin:0 0 26px}
+  .dl-add input[type="text"]{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 14px;color:var(--text);font-family:inherit;font-size:15px}
+  .dl-add input[type="date"]{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 12px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;color-scheme:dark;max-width:150px}
+  .dl-add input::placeholder{color:var(--muted)}
+  .dl-add input:focus{outline:none;border-color:var(--peri)}
+  .dl-add input:disabled{opacity:.5}
+  .dl-add button{background:var(--surface-2);border:1px solid var(--line);color:var(--dawn);border-radius:11px;width:46px;font-size:22px;cursor:pointer;font-family:'Fraunces',serif;flex-shrink:0}
+  .dl-add button:active{background:var(--surface)}
+  .dl-add button:disabled{opacity:.5;cursor:default}
+
+  /* «с вчера» подпись в задаче */
+  .item .t-wrap{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .item .carried{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;letter-spacing:.02em}
+
   /* note */
   .note{margin-top:30px;padding:16px 18px;border-radius:14px;background:var(--surface);border:1px dashed var(--line);color:var(--muted);font-size:14px;line-height:1.5;font-style:italic}
 
@@ -132,6 +161,9 @@
 
   <div class="banner hidden" id="banner"></div>
 
+  <!-- строка «сейчас / дальше» — появляется, если есть таймлайн -->
+  <div class="nownext rise hidden" id="nownext" style="animation-delay:.04s"></div>
+
   <div class="focus rise" id="focusCard" style="animation-delay:.05s">
     <div class="label">Фокус дня</div>
     <div class="text" id="focus">—</div>
@@ -143,7 +175,20 @@
     Загляни чуть позже — утренний агент скоро запишет расписание и фокус дня.
   </div>
 
-  <div class="sec-head rise" id="planHead" style="animation-delay:.1s">
+  <!-- Дедлайны: заголовок и список рисуются, только если есть незакрытые.
+       Форма добавления видна всегда — это вход в постоянный список. -->
+  <div class="sec-head rise hidden" id="dlHead" style="animation-delay:.08s">
+    <h2>Дедлайны</h2>
+    <div class="meta" id="dlMeta"></div>
+  </div>
+  <div class="deadlines rise hidden" id="deadlines" style="animation-delay:.09s"></div>
+  <div class="dl-add rise" id="dlAdd" style="animation-delay:.1s">
+    <input id="dlTitle" type="text" placeholder="Новый дедлайн…" autocomplete="off">
+    <input id="dlDate" type="date" aria-label="Дата дедлайна">
+    <button id="dlBtn" aria-label="Добавить дедлайн">+</button>
+  </div>
+
+  <div class="sec-head rise" id="planHead" style="animation-delay:.12s">
     <h2>План</h2>
     <div class="meta" id="now-clock">—</div>
   </div>
