@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Редакторы
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# ВНИМАНИЕ: config.js НЕ игнорируется — он должен коммититься,
+# иначе сайт на GitHub Pages не получит anon-ключ. Это by design.

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Мой день">
+<meta name="theme-color" content="#14131f">
+<title>Мой день</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --base:#14131f;
+    --surface:#1e1c2e;
+    --surface-2:#262338;
+    --line:#302c45;
+    --text:#ece9f5;
+    --muted:#8b86a8;
+    --dawn:#f0b866;      /* dawn gold — primary accent */
+    --peri:#8a9cf0;      /* periwinkle — secondary */
+    --done:#6fcf97;
+    --danger:#f08a8a;
+    --work:#f0b866;
+    --study:#8a9cf0;
+    --sport:#f08a8a;
+    --break:#7fd4c4;
+    --hobby:#c79cf0;
+    --other:#8b86a8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--base);color:var(--text);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  body{
+    min-height:100vh;
+    padding:calc(env(safe-area-inset-top) + 26px) 20px calc(env(safe-area-inset-bottom) + 40px);
+    max-width:480px;margin:0 auto;
+    background:
+      radial-gradient(120% 60% at 50% -10%, rgba(240,184,102,.10), transparent 60%),
+      var(--base);
+  }
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .rise{animation:rise .5s ease both}
+  @media (prefers-reduced-motion:reduce){.rise{animation:none}}
+
+  /* header */
+  header{margin-bottom:26px}
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .greeting{font-family:'Fraunces',serif;font-weight:500;font-size:38px;line-height:1.05;margin-top:8px;letter-spacing:-.01em}
+  .greeting em{font-style:italic;color:var(--dawn)}
+  .subline{color:var(--muted);font-size:14px;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .dot{width:3px;height:3px;border-radius:50%;background:var(--muted);display:inline-block}
+
+  /* focus card */
+  .focus{
+    margin-bottom:28px;padding:18px 18px 16px;border-radius:16px;
+    background:linear-gradient(150deg,var(--surface-2),var(--surface));
+    border:1px solid var(--line);position:relative;overflow:hidden;
+  }
+  .focus::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dawn)}
+  .focus .label{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dawn)}
+  .focus .text{font-size:17px;font-weight:500;margin-top:8px;line-height:1.35}
+
+  /* section head */
+  .sec-head{display:flex;align-items:baseline;justify-content:space-between;margin:0 2px 14px}
+  .sec-head h2{font-family:'Fraunces',serif;font-weight:500;font-size:20px;letter-spacing:-.01em}
+  .sec-head .meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+
+  /* timeline */
+  .timeline{margin-bottom:30px;display:flex;flex-direction:column;gap:2px}
+  .block{display:grid;grid-template-columns:56px 1fr;gap:14px;padding:11px 12px;border-radius:12px;position:relative}
+  .block .time{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);padding-top:1px}
+  .block .body{border-left:2px solid var(--line);padding-left:14px}
+  .block .b-title{font-size:15px;font-weight:500}
+  .block .b-loc{font-size:12px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:5px}
+  .block .b-loc svg{width:11px;height:11px;flex-shrink:0;opacity:.8}
+  .block .b-range{font-size:12px;color:var(--muted);margin-top:2px;font-family:'JetBrains Mono',monospace}
+  .block[data-state="past"]{opacity:.42}
+  .block[data-state="past"] .body{border-color:var(--line)}
+  .block[data-state="now"]{background:var(--surface)}
+  .block[data-state="now"] .body{border-color:var(--tag,var(--dawn))}
+  .now-flag{display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--tag,var(--dawn));margin-top:6px}
+  .now-pulse{width:7px;height:7px;border-radius:50%;background:var(--tag,var(--dawn));box-shadow:0 0 0 0 var(--tag,var(--dawn));animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(240,184,102,.5)}70%{box-shadow:0 0 0 7px rgba(240,184,102,0)}100%{box-shadow:0 0 0 0 rgba(240,184,102,0)}}
+  @media (prefers-reduced-motion:reduce){.now-pulse{animation:none}}
+
+  /* checklist */
+  .list{margin-bottom:24px;display:flex;flex-direction:column;gap:2px}
+  .item{display:flex;align-items:center;gap:13px;padding:12px 12px;border-radius:11px;cursor:pointer;user-select:none;transition:background .15s}
+  .item:active{background:var(--surface)}
+  .item.pending{opacity:.55}
+  .box{width:21px;height:21px;border-radius:7px;border:2px solid var(--line);flex-shrink:0;display:grid;place-items:center;transition:.15s}
+  .box svg{width:12px;height:12px;opacity:0;transform:scale(.6);transition:.15s}
+  .item.done .box{background:var(--done);border-color:var(--done)}
+  .item.done .box svg{opacity:1;transform:none}
+  .item .t{font-size:15px;transition:.15s;flex:1;word-break:break-word}
+  .item.done .t{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--muted)}
+
+  /* add row */
+  .add{display:flex;gap:9px;margin-top:6px}
+  .add input{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 14px;color:var(--text);font-family:inherit;font-size:15px}
+  .add input::placeholder{color:var(--muted)}
+  .add input:focus{outline:none;border-color:var(--peri)}
+  .add input:disabled{opacity:.5}
+  .add button{background:var(--surface-2);border:1px solid var(--line);color:var(--dawn);border-radius:11px;width:46px;font-size:22px;cursor:pointer;font-family:'Fraunces',serif}
+  .add button:active{background:var(--surface)}
+  .add button:disabled{opacity:.5;cursor:default}
+
+  /* note */
+  .note{margin-top:30px;padding:16px 18px;border-radius:14px;background:var(--surface);border:1px dashed var(--line);color:var(--muted);font-size:14px;line-height:1.5;font-style:italic}
+
+  /* empty / error states */
+  .empty{margin:4px 2px 30px;padding:22px 18px;border-radius:14px;background:var(--surface);border:1px dashed var(--line);color:var(--muted);font-size:14px;line-height:1.5;text-align:center}
+  .empty strong{display:block;color:var(--text);font-family:'Fraunces',serif;font-weight:500;font-size:17px;font-style:normal;margin-bottom:6px}
+  .banner{margin:0 2px 20px;padding:12px 14px;border-radius:11px;background:rgba(240,138,138,.10);border:1px solid rgba(240,138,138,.4);color:var(--danger);font-size:13px;line-height:1.45}
+  .hidden{display:none!important}
+
+  footer{margin-top:30px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.05em}
+</style>
+</head>
+<body>
+  <header class="rise">
+    <div class="eyebrow" id="dateline">—</div>
+    <h1 class="greeting" id="greeting">Доброе утро,<br><em id="name">—</em></h1>
+    <div class="subline" id="subline"></div>
+  </header>
+
+  <div class="banner hidden" id="banner"></div>
+
+  <div class="focus rise" id="focusCard" style="animation-delay:.05s">
+    <div class="label">Фокус дня</div>
+    <div class="text" id="focus">—</div>
+  </div>
+
+  <!-- пустой стейт, когда строки days за сегодня ещё нет -->
+  <div class="empty hidden" id="emptyState">
+    <strong>План на сегодня ещё формируется</strong>
+    Загляни чуть позже — утренний агент скоро запишет расписание и фокус дня.
+  </div>
+
+  <div class="sec-head rise" id="planHead" style="animation-delay:.1s">
+    <h2>План</h2>
+    <div class="meta" id="now-clock">—</div>
+  </div>
+  <div class="timeline rise" id="timeline" style="animation-delay:.12s"></div>
+
+  <div class="sec-head rise" style="animation-delay:.16s">
+    <h2>Чеклист</h2>
+    <div class="meta" id="progress">0 / 0</div>
+  </div>
+  <div class="list rise" id="list" style="animation-delay:.18s"></div>
+  <div class="add rise" style="animation-delay:.2s">
+    <input id="addInput" type="text" placeholder="Добавить дело…" autocomplete="off">
+    <button id="addBtn" aria-label="Добавить">+</button>
+  </div>
+
+  <div class="note rise hidden" id="note" style="animation-delay:.24s"></div>
+
+  <footer class="rise" style="animation-delay:.28s" id="footer">—</footer>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
