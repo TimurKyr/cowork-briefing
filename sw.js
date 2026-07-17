@@ -1,11 +1,14 @@
 /* Service worker: мгновенная загрузка оболочки (cache-first) и офлайн.
    Данные Supabase НЕ кэшируем здесь — свежесть данных обеспечивает
-   app.js через localStorage (stale-while-revalidate).
+   app.js через localStorage (stale-while-revalidate). День теперь
+   читается из Google Drive (googleapis.com/drive/v3/...) — сеть-
+   первым (network-first) с откатом на последний закэшированный
+   ответ, чтобы офлайн показывал последний известный день.
 
-   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v2 → v3),
+   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v3 → v4),
    иначе пользователи залипнут на старой версии. */
 
-const CACHE = "myday-shell-v3";
+const CACHE = "myday-shell-v4";
 const SHELL = [
   ".",
   "index.html",
@@ -38,12 +41,12 @@ self.addEventListener("fetch", (e) => {
   // Данные Supabase — всегда сеть, не трогаем (кэшем данных заведует app.js).
   if (url.hostname.endsWith("supabase.co") || url.hostname.endsWith("supabase.in")) return;
 
-  // data/today.json — сетевой-первый (в обход кэша Pages идёт с ?v=timestamp).
-  // Кэшируем без query-строки, чтобы офлайн отдать последний известный день,
-  // а НЕ index.html (иначе JSON-парсинг сломался бы). Если сети и кэша нет —
-  // запрос падает, и app.js оставляет день из localStorage.
-  if (url.pathname.endsWith("/data/today.json")) {
-    const key = url.origin + url.pathname;
+  // Google Drive API (день: files.list + files.get?alt=media) — сетевой-первый.
+  // Кэшируем по полному URL (включает имя файла на сегодня и fileId), чтобы
+  // офлайн отдал последний известный ответ. Если сети и кэша нет — запрос
+  // падает, и app.js оставляет день из localStorage.
+  if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/drive/")) {
+    const key = req.url;
     e.respondWith(
       fetch(req)
         .then((res) => {

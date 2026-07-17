@@ -1,9 +1,13 @@
 /* ─────────────────────────────────────────────────────────────
    «Мой день» — два источника данных.
 
-   • Секция дня (day) — читается из статического файла data/today.json
-     в этом же репозитории. Его каждое утро пишет агент (Cowork) коммитом
-     через GitHub-коннектор — мимо блокировки сети на supabase.co.
+   • Секция дня (day) — читается из Google Drive. Агент (Cowork) не
+     умеет обновлять существующие файлы, только создавать новые —
+     поэтому каждое утро он СОЗДАЁТ отдельный файл day-YYYY-MM-DD.json
+     (за сегодняшнюю дату) в заданной папке Drive. Сайт каждый раз
+     ищет по имени файл за сегодня через Google Drive API (files.list
+     по папке+имени, затем files.get?alt=media) и читает его целиком.
+     Старые day-*.json просто остаются в папке — это ожидаемо.
    • Задачи `tasks` и дедлайны `deadlines` — по-прежнему в Supabase:
      их читает и пишет браузер (у него доступ к supabase.co есть).
 
@@ -125,35 +129,67 @@ function loadCache() {
   catch { return null; }
 }
 
-/* ── загрузка ──────────────────────────────────────────────── */
-// День берём из data/today.json — тот же домен github.io, CORS не нужен.
-// ?v=timestamp обходит кэш GitHub Pages, чтобы утренний коммит подхватился сразу.
+/* ── день из Google Drive ─────────────────────────────────────
+   Файл называется day-YYYY-MM-DD.json и лежит в папке DRIVE_FOLDER_ID.
+   Агент только СОЗДАЁТ новый файл на новую дату (не обновляет старый),
+   поэтому сайт каждый раз ищет файл по имени заново — стабильного
+   fileId заранее нет.
+
+   Шаг 1 — files.list: находим id файла с нужным именем в нужной папке.
+   Шаг 2 — files.get?alt=media: скачиваем содержимое по этому id.
+   Оба запроса идут с restricted API-ключом (см. config.js), поэтому
+   папка должна быть расшарена «Все, у кого есть ссылка — Читатель». */
+const DRIVE_FOLDER = (typeof DRIVE_FOLDER_ID !== "undefined" && DRIVE_FOLDER_ID) ? DRIVE_FOLDER_ID : "";
+const DRIVE_KEY = (typeof DRIVE_API_KEY !== "undefined" && DRIVE_API_KEY) ? DRIVE_API_KEY : "";
+
+function driveListUrl(filename) {
+  const q = `'${DRIVE_FOLDER}' in parents and name = '${filename}' and trashed = false`;
+  const params = new URLSearchParams({
+    q, fields: "files(id,name)", key: DRIVE_KEY, spaces: "drive",
+  });
+  return `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
+}
+function driveContentUrl(fileId) {
+  return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${encodeURIComponent(DRIVE_KEY)}`;
+}
+
 async function fetchDay() {
-  const res = await fetch(`data/today.json?v=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) throw new HttpError(`GET today.json → ${res.status}`, res.status);
-  return res.json();
+  const filename = `day-${state.date}.json`;
+  const listRes = await fetch(driveListUrl(filename), { cache: "no-store" });
+  if (!listRes.ok) throw new HttpError(`Drive files.list → ${listRes.status}`, listRes.status);
+  const listJson = await listRes.json();
+  const file = listJson && Array.isArray(listJson.files) ? listJson.files[0] : null;
+  if (!file) return null; // агент ещё не создал файл за сегодня
+
+  const contentRes = await fetch(driveContentUrl(file.id), { cache: "no-store" });
+  if (!contentRes.ok) throw new HttpError(`Drive files.get → ${contentRes.status}`, contentRes.status);
+  return contentRes.json();
 }
 
 async function load() {
   const date = state.date;
   const haveSB = Boolean(SB && KEY);
-  if (!haveSB) {
-    showBanner("Не заполнен config.js (SUPABASE_URL / SUPABASE_ANON_KEY) — дела и дедлайны недоступны. Открой config.js и вставь ключи из Supabase.");
-  }
+  const haveDrive = Boolean(DRIVE_FOLDER && DRIVE_KEY);
+  const banners = [];
+  if (!haveSB) banners.push("SUPABASE_URL / SUPABASE_ANON_KEY — дела и дедлайны недоступны.");
+  if (!haveDrive) banners.push("DRIVE_FOLDER_ID / DRIVE_API_KEY — день (фокус/погода/таймлайн) недоступен.");
+  if (banners.length) showBanner("Не заполнен config.js: " + banners.join(" ") + " Открой config.js и вставь значения.");
 
   let netError = false;  // сетевой сбой (offline) хотя бы на одном запросе
-  let apiError = false;  // реальная ошибка Supabase API
+  let apiError = false;  // реальная ошибка Supabase/Drive API
 
-  // ── день из data/today.json ──
-  try {
-    const dj = await fetchDay();
-    // Показываем день, только если файл именно за сегодня (Алматы). Иначе — пустой
-    // стейт «План на сегодня ещё формируется», а не устаревший день.
-    state.day = (dj && dj.date === date) ? dj : null;
-  } catch (err) {
-    console.error(err);
-    if (err instanceof TypeError) netError = true;  // нет сети — оставляем кэш дня
-    else state.day = null;                          // нет файла / битый JSON — пустой стейт
+  // ── день из Google Drive (day-YYYY-MM-DD.json) ──
+  if (haveDrive) {
+    try {
+      const dj = await fetchDay();
+      // Показываем день, только если файл именно за сегодня (Алматы). Иначе — пустой
+      // стейт «План на сегодня ещё формируется», а не устаревший день.
+      state.day = (dj && dj.date === date) ? dj : null;
+    } catch (err) {
+      console.error(err);
+      if (err instanceof TypeError) netError = true;  // нет сети — оставляем кэш дня
+      else state.day = null;                          // нет файла / битый JSON — пустой стейт
+    }
   }
 
   // ── задачи и дедлайны из Supabase (без изменений в логике) ──
@@ -178,7 +214,7 @@ async function load() {
   state.hydrated = true;
   if (apiError) {
     showBanner("Не удалось получить дела/дедлайны из Supabase. Проверь URL/ключ, миграцию и политики RLS. Подробности — в консоли.");
-  } else if (haveSB && !netError) {
+  } else if (haveSB && haveDrive && !netError) {
     hideBanner();
   }
   saveCache();
