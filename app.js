@@ -1,9 +1,11 @@
 /* ─────────────────────────────────────────────────────────────
-   «Мой день» — чтение и запись данных в Supabase.
-   Тянет строку `days`, задачи `tasks` (сегодняшние + невыполненные
-   с прошлых дат) и дедлайны `deadlines`, рендерит их и пишет
-   изменения обратно. Данные на сегодня каждое утро перезаписывает
-   агент (Cowork).
+   «Мой день» — два источника данных.
+
+   • Секция дня (day) — читается из статического файла data/today.json
+     в этом же репозитории. Его каждое утро пишет агент (Cowork) коммитом
+     через GitHub-коннектор — мимо блокировки сети на supabase.co.
+   • Задачи `tasks` и дедлайны `deadlines` — по-прежнему в Supabase:
+     их читает и пишет браузер (у него доступ к supabase.co есть).
 
    ВРЕМЯ: всё «сегодня»/«сейчас» считается по Asia/Almaty (UTC+5),
    независимо от часового пояса устройства.
@@ -124,41 +126,63 @@ function loadCache() {
 }
 
 /* ── загрузка ──────────────────────────────────────────────── */
+// День берём из data/today.json — тот же домен github.io, CORS не нужен.
+// ?v=timestamp обходит кэш GitHub Pages, чтобы утренний коммит подхватился сразу.
+async function fetchDay() {
+  const res = await fetch(`data/today.json?v=${Date.now()}`, { cache: "no-store" });
+  if (!res.ok) throw new HttpError(`GET today.json → ${res.status}`, res.status);
+  return res.json();
+}
+
 async function load() {
-  if (!SB || !KEY) {
-    showBanner("Не заполнен config.js (SUPABASE_URL / SUPABASE_ANON_KEY). Открой config.js и вставь ключи из Supabase.");
-    render();
-    return;
-  }
   const date = state.date;
+  const haveSB = Boolean(SB && KEY);
+  if (!haveSB) {
+    showBanner("Не заполнен config.js (SUPABASE_URL / SUPABASE_ANON_KEY) — дела и дедлайны недоступны. Открой config.js и вставь ключи из Supabase.");
+  }
+
+  let netError = false;  // сетевой сбой (offline) хотя бы на одном запросе
+  let apiError = false;  // реальная ошибка Supabase API
+
+  // ── день из data/today.json ──
   try {
-    const [days, tasks, deadlines] = await Promise.all([
-      sbGet(`days?date=eq.${date}&limit=1`),
-      // сегодняшние ИЛИ невыполненные с прошлых дат — видно сразу, не дожидаясь агента
-      sbGet(`tasks?or=(date.eq.${date},and(date.lt.${date},done.eq.false))&order=date.asc,created_at.asc`),
-      sbGet(`deadlines?done=eq.false&order=due_date.asc,created_at.asc`),
-    ]);
-    state.day = days && days.length ? days[0] : null;
-    state.tasks = Array.isArray(tasks) ? tasks : [];
-    state.deadlines = Array.isArray(deadlines) ? deadlines : [];
-    state.offline = false;
-    state.hydrated = true;
-    saveCache();
-    hideBanner();
-    render();
+    const dj = await fetchDay();
+    // Показываем день, только если файл именно за сегодня (Алматы). Иначе — пустой
+    // стейт «План на сегодня ещё формируется», а не устаревший день.
+    state.day = (dj && dj.date === date) ? dj : null;
   } catch (err) {
     console.error(err);
-    // Сетевой сбой (offline) → показываем последнее известное из кэша без красного баннера.
-    if (err instanceof TypeError) {
-      state.offline = true;
-      if (state.hydrated) { render(); }
-      else { render(); }
-    } else {
-      // Реальная ошибка API (RLS, неверный ключ, отсутствует таблица) — показываем баннер.
-      showBanner("Не удалось получить данные из Supabase. Проверь URL/ключ, миграцию и политики RLS. Подробности — в консоли.");
-      render();
+    if (err instanceof TypeError) netError = true;  // нет сети — оставляем кэш дня
+    else state.day = null;                          // нет файла / битый JSON — пустой стейт
+  }
+
+  // ── задачи и дедлайны из Supabase (без изменений в логике) ──
+  if (haveSB) {
+    try {
+      const [tasks, deadlines] = await Promise.all([
+        // сегодняшние ИЛИ невыполненные с прошлых дат — видно сразу, не дожидаясь агента
+        sbGet(`tasks?or=(date.eq.${date},and(date.lt.${date},done.eq.false))&order=date.asc,created_at.asc`),
+        sbGet(`deadlines?done=eq.false&order=due_date.asc,created_at.asc`),
+      ]);
+      state.tasks = Array.isArray(tasks) ? tasks : [];
+      state.deadlines = Array.isArray(deadlines) ? deadlines : [];
+    } catch (err) {
+      console.error(err);
+      // offline → оставляем кэш без красного баннера; иначе реальная ошибка API.
+      if (err instanceof TypeError) netError = true;
+      else apiError = true;
     }
   }
+
+  state.offline = netError;
+  state.hydrated = true;
+  if (apiError) {
+    showBanner("Не удалось получить дела/дедлайны из Supabase. Проверь URL/ключ, миграцию и политики RLS. Подробности — в консоли.");
+  } else if (haveSB && !netError) {
+    hideBanner();
+  }
+  saveCache();
+  render();
 }
 
 /* ── рендер ────────────────────────────────────────────────── */
@@ -446,7 +470,8 @@ document.getElementById("dlTitle").addEventListener("keydown", (e) => { if (e.ke
 (function hydrateFromCache() {
   const c = loadCache();
   if (c) {
-    state.day = c.day || null;
+    // День из кэша показываем только если он за сегодня — иначе пустой стейт.
+    state.day = (c.day && c.day.date === state.date) ? c.day : null;
     state.tasks = Array.isArray(c.tasks) ? c.tasks : [];
     state.deadlines = Array.isArray(c.deadlines) ? c.deadlines : [];
     state.hydrated = true;

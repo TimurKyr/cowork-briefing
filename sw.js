@@ -5,7 +5,7 @@
    ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v2 → v3),
    иначе пользователи залипнут на старой версии. */
 
-const CACHE = "myday-shell-v2";
+const CACHE = "myday-shell-v3";
 const SHELL = [
   ".",
   "index.html",
@@ -37,6 +37,26 @@ self.addEventListener("fetch", (e) => {
 
   // Данные Supabase — всегда сеть, не трогаем (кэшем данных заведует app.js).
   if (url.hostname.endsWith("supabase.co") || url.hostname.endsWith("supabase.in")) return;
+
+  // data/today.json — сетевой-первый (в обход кэша Pages идёт с ?v=timestamp).
+  // Кэшируем без query-строки, чтобы офлайн отдать последний известный день,
+  // а НЕ index.html (иначе JSON-парсинг сломался бы). Если сети и кэша нет —
+  // запрос падает, и app.js оставляет день из localStorage.
+  if (url.pathname.endsWith("/data/today.json")) {
+    const key = url.origin + url.pathname;
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(key, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => caches.match(key))
+    );
+    return;
+  }
 
   // Другой origin (например, шрифты Google) — сеть с мягким откатом в кэш.
   if (url.origin !== self.location.origin) {
