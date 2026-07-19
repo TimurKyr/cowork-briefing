@@ -11,7 +11,7 @@ window.SUPABASE_ANON_KEY = "sb_publishable_GcWNGR5dZh34iIm0mlilIg_gg2EFJTi";
 
 // TODO: впиши после того, как создашь и расшаришь папку в Drive и
 // сделаешь restricted API-ключ (см. config.example.js / README.md).
-window.DRIVE_FOLDER_ID = "YOUR-DRIVE-FOLDER-ID";
-window.DRIVE_API_KEY = "YOUR-RESTRICTED-DRIVE-API-KEY";
+window.DRIVE_FOLDER_ID = "1szZR7lkvRXcKSPwDYeic751oAEwXPnFx";
+window.DRIVE_API_KEY = "AIzaSyAjAS4NyVH7NpyxMjKB6Vm3WLjHhQ82jJI";
 
 window.APP_NAME = "Тимур";
