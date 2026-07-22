@@ -33,10 +33,15 @@ create table if not exists public.tasks (
   text         text not null,
   done         boolean not null default false,
   carried_over boolean not null default false,  -- перенесено с прошлого дня
+  priority     text not null default 'low'
+                 check (priority in ('high','medium','low')),
+  position     double precision not null default 0,  -- ручной порядок внутри приоритета
   created_at   timestamptz not null default now()
 );
 
 create index if not exists tasks_date_idx on public.tasks (date);
+create index if not exists tasks_date_priority_position_idx
+  on public.tasks (date, priority, position);
 
 -- ── Таблица deadlines: постоянный список дедлайнов ────────────
 create table if not exists public.deadlines (

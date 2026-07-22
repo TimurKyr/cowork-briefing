@@ -197,7 +197,9 @@ async function load() {
     try {
       const [tasks, deadlines] = await Promise.all([
         // сегодняшние ИЛИ невыполненные с прошлых дат — видно сразу, не дожидаясь агента
-        sbGet(`tasks?or=(date.eq.${date},and(date.lt.${date},done.eq.false))&order=date.asc,created_at.asc`),
+        // Порядок задаём позицией: группировка по приоритету — на клиенте
+        // (priority — text, серверная сортировка дала бы алфавитный порядок).
+        sbGet(`tasks?or=(date.eq.${date},and(date.lt.${date},done.eq.false))&order=position.asc,created_at.asc`),
         sbGet(`deadlines?done=eq.false&order=due_date.asc,created_at.asc`),
       ]);
       state.tasks = Array.isArray(tasks) ? tasks : [];
@@ -381,23 +383,200 @@ function renderPlan() {
   });
 }
 
+/* ── чеклист с приоритетами ────────────────────────────────── */
+const PRIORITIES = [
+  { key: "high",   name: "Высокий" },
+  { key: "medium", name: "Средний" },
+  { key: "low",    name: "Низкий"  },
+];
+const PRIORITY_KEYS = PRIORITIES.map((p) => p.key);
+const normPriority = (p) => (PRIORITY_KEYS.includes(p) ? p : "low");
+// position может отсутствовать в старом кэше — считаем 0.
+const posOf = (t) => { const n = Number(t.position); return Number.isFinite(n) ? n : 0; };
+// Задачи одного приоритета в порядке position.
+const tasksOf = (priority) =>
+  state.tasks.filter((t) => normPriority(t.priority) === priority)
+             .sort((a, b) => posOf(a) - posOf(b));
+
+const GRIP_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>`;
+
+function taskEl(task) {
+  const carried = task.date && task.date < state.date;
+  const el = document.createElement("div");
+  el.className = "item" + (task.done ? " done" : "") + (task._pending ? " pending" : "");
+  el.dataset.id = String(task.id);
+  el.innerHTML =
+    `<div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#14131f" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></div>
+     <div class="t-wrap"><div class="t"></div>${carried ? `<div class="carried">⤷ с вчера</div>` : ""}</div>
+     <div class="grip" aria-label="Перетащить">${GRIP_SVG}</div>`;
+  el.querySelector(".t").textContent = task.text;
+  el.addEventListener("click", (e) => {
+    if (e.target.closest(".grip")) return;   // ручка не переключает отметку
+    if (justDragged) return;                 // клик сразу после перетаскивания игнорируем
+    toggle(task);
+  });
+  el.querySelector(".grip").addEventListener("pointerdown", (e) => startDrag(e, task, el));
+  return el;
+}
+
 function renderList() {
   const list = document.getElementById("list");
   list.innerHTML = "";
-  state.tasks.forEach((task) => {
-    const carried = task.date && task.date < state.date;
-    const el = document.createElement("div");
-    el.className = "item" + (task.done ? " done" : "") + (task._pending ? " pending" : "");
-    el.innerHTML =
-      `<div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#14131f" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></div>
-       <div class="t-wrap"><div class="t"></div>${carried ? `<div class="carried">⤷ с вчера</div>` : ""}</div>`;
-    el.querySelector(".t").textContent = task.text;
-    el.onclick = () => toggle(task);
-    list.appendChild(el);
+  PRIORITIES.forEach((p) => {
+    const items = tasksOf(p.key);
+    const doneN = items.filter((t) => t.done).length;
+    const group = document.createElement("div");
+    group.className = "pgroup";
+    group.dataset.priority = p.key;
+    group.innerHTML =
+      `<div class="pgroup-head">
+         <span class="pdot"></span><span class="pname">${p.name}</span>
+         <span class="pcnt">${doneN} / ${items.length}</span>
+       </div>
+       <div class="pgroup-body" data-priority="${p.key}"></div>`;
+    const body = group.querySelector(".pgroup-body");
+    items.forEach((task) => body.appendChild(taskEl(task)));
+    list.appendChild(group);
   });
   const total = state.tasks.length;
   const done = state.tasks.filter((t) => t.done).length;
   document.getElementById("progress").textContent = `${done} / ${total}`;
+}
+
+/* ── перетаскивание задач (мышь + палец) ─────────────────────
+   Используем Pointer Events, а не HTML5 drag-and-drop: последний
+   не работает на тач-экранах. Тянуть можно только за ручку (.grip),
+   у неё touch-action:none — поэтому палец тянет задачу, а страница
+   при этом продолжает нормально скроллиться в остальных местах. */
+let drag = null;
+let justDragged = false;
+
+function startDrag(e, task, el) {
+  if (task._pending || drag) return;
+  if (e.button !== undefined && e.button !== 0) return;   // только левая кнопка
+  e.preventDefault();
+
+  const rect = el.getBoundingClientRect();
+  const ghost = el.cloneNode(true);
+  ghost.classList.add("drag-ghost");
+  ghost.style.width = rect.width + "px";
+  document.body.appendChild(ghost);
+
+  drag = { task, el, ghost, dx: e.clientX - rect.left, dy: e.clientY - rect.top, moved: false };
+  el.classList.add("dragging");
+  moveGhost(e.clientX, e.clientY);
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* не критично */ }
+
+  window.addEventListener("pointermove", onDragMove);
+  window.addEventListener("pointerup", onDragEnd);
+  window.addEventListener("pointercancel", onDragEnd);
+}
+
+function moveGhost(x, y) {
+  drag.ghost.style.transform = `translate(${x - drag.dx}px, ${y - drag.dy}px)`;
+}
+
+function onDragMove(e) {
+  if (!drag) return;
+  e.preventDefault();
+  drag.moved = true;
+  moveGhost(e.clientX, e.clientY);
+
+  const bodies = [...document.querySelectorAll(".pgroup-body")];
+  // группа под курсором, иначе ближайшая по вертикали
+  let target = bodies.find((b) => {
+    const r = b.getBoundingClientRect();
+    return e.clientY >= r.top - 8 && e.clientY <= r.bottom + 8;
+  });
+  if (!target) {
+    let best = null;
+    bodies.forEach((b) => {
+      const r = b.getBoundingClientRect();
+      const d = e.clientY < r.top ? r.top - e.clientY : e.clientY - r.bottom;
+      if (!best || d < best.d) best = { b, d };
+    });
+    target = best && best.b;
+  }
+  bodies.forEach((b) => b.classList.toggle("drop-active", b === target));
+  if (!target) return;
+
+  // вставляем перетаскиваемый элемент между соседями — живой предпросмотр
+  const siblings = [...target.querySelectorAll(".item")].filter((x) => x !== drag.el);
+  const after = siblings.find((x) => {
+    const r = x.getBoundingClientRect();
+    return e.clientY < r.top + r.height / 2;
+  });
+  if (after) target.insertBefore(drag.el, after);
+  else target.appendChild(drag.el);
+}
+
+async function onDragEnd() {
+  if (!drag) return;
+  const { task, el, ghost, moved } = drag;
+  window.removeEventListener("pointermove", onDragMove);
+  window.removeEventListener("pointerup", onDragEnd);
+  window.removeEventListener("pointercancel", onDragEnd);
+  ghost.remove();
+  el.classList.remove("dragging");
+  document.querySelectorAll(".pgroup-body").forEach((b) => b.classList.remove("drop-active"));
+  drag = null;
+
+  if (!moved) return;
+  justDragged = true;
+  setTimeout(() => { justDragged = false; }, 300);
+
+  const body = el.closest(".pgroup-body");
+  if (!body) { renderList(); return; }
+  const newPriority = normPriority(body.dataset.priority);
+
+  // соседи в новом порядке DOM → новая дробная позиция «между»
+  const ids = [...body.querySelectorAll(".item")].map((x) => x.dataset.id);
+  const byId = (id) => state.tasks.find((t) => String(t.id) === String(id));
+  const idx = ids.indexOf(String(task.id));
+  const prev = idx > 0 ? byId(ids[idx - 1]) : null;
+  const next = idx >= 0 && idx < ids.length - 1 ? byId(ids[idx + 1]) : null;
+
+  const prevPos = prev ? posOf(prev) : null;
+  const nextPos = next ? posOf(next) : null;
+  let newPos;
+  if (prevPos === null && nextPos === null) newPos = 0;
+  else if (prevPos === null) newPos = nextPos - 1000;
+  else if (nextPos === null) newPos = prevPos + 1000;
+  else newPos = (prevPos + nextPos) / 2;
+
+  const oldPriority = normPriority(task.priority);
+  const oldPos = posOf(task);
+  if (oldPriority === newPriority && oldPos === newPos) { renderList(); return; }
+
+  task.priority = newPriority;
+  task.position = newPos;
+  renderList();
+
+  try {
+    await sbPatch(`tasks?id=eq.${task.id}`, { priority: newPriority, position: newPos });
+    saveCache();
+    // точность дробей исчерпана (сосед вплотную) — разово перенумеровываем группу
+    if (prev && next && (newPos === prevPos || newPos === nextPos)) await renumber(newPriority);
+  } catch (err) {
+    console.error(err);
+    task.priority = oldPriority; task.position = oldPos;
+    renderList();
+    showBanner("Не удалось сохранить перемещение. Изменение отменено.");
+  }
+}
+
+// Раздаём ровные позиции 1000, 2000, … — редкий случай, когда дроби «схлопнулись».
+async function renumber(priority) {
+  const items = tasksOf(priority);
+  for (let i = 0; i < items.length; i++) {
+    const p = (i + 1) * 1000;
+    if (posOf(items[i]) !== p) {
+      items[i].position = p;
+      await sbPatch(`tasks?id=eq.${items[i].id}`, { position: p });
+    }
+  }
+  saveCache();
+  renderList();
 }
 
 /* ── действия ──────────────────────────────────────────────── */
@@ -418,16 +597,24 @@ async function toggle(task) {
 async function addTask() {
   const inp = document.getElementById("addInput");
   const btn = document.getElementById("addBtn");
+  const sel = document.getElementById("addPriority");
   const v = inp.value.trim();
   if (!v) return;
   if (!SB || !KEY) { showBanner("Нельзя добавить дело: не заполнен config.js."); return; }
 
-  const temp = { id: "temp-" + Date.now(), date: state.date, text: v, done: false, carried_over: false, _pending: true };
+  // новое дело — в начало выбранного приоритета
+  const priority = normPriority(sel.value);
+  const group = tasksOf(priority);
+  const position = group.length ? Math.min(...group.map(posOf)) - 1000 : 0;
+
+  const temp = { id: "temp-" + Date.now(), date: state.date, text: v, done: false,
+                 carried_over: false, priority, position, _pending: true };
   state.tasks.push(temp);
-  inp.value = ""; inp.disabled = true; btn.disabled = true;
+  inp.value = ""; inp.disabled = true; btn.disabled = true; sel.disabled = true;
   renderList();
   try {
-    const rows = await sbInsert("tasks", { date: state.date, text: v, done: false, carried_over: false });
+    const rows = await sbInsert("tasks", { date: state.date, text: v, done: false,
+                                           carried_over: false, priority, position });
     const saved = rows && rows[0] ? rows[0] : null;
     const idx = state.tasks.indexOf(temp);
     if (saved && idx !== -1) state.tasks[idx] = saved;
@@ -437,7 +624,8 @@ async function addTask() {
     state.tasks = state.tasks.filter((t) => t !== temp);
     showBanner("Не удалось добавить дело. Попробуй ещё раз.");
   } finally {
-    inp.disabled = false; btn.disabled = false; renderList(); inp.focus();
+    inp.disabled = false; btn.disabled = false; sel.disabled = false;
+    renderList(); inp.focus();
   }
 }
 

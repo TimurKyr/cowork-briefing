@@ -116,7 +116,8 @@
   .add input::placeholder{color:var(--muted)}
   .add input:focus{outline:none;border-color:var(--peri)}
   .add input:disabled{opacity:.5}
-  .add button{background:var(--surface-2);border:1px solid var(--line);color:var(--dawn);border-radius:11px;width:46px;font-size:22px;cursor:pointer;font-family:'Fraunces',serif}
+  .add input{min-width:0}
+  .add button{background:var(--surface-2);border:1px solid var(--line);color:var(--dawn);border-radius:11px;width:46px;flex-shrink:0;font-size:22px;cursor:pointer;font-family:'Fraunces',serif}
   .add button:active{background:var(--surface)}
   .add button:disabled{opacity:.5;cursor:default}
 
@@ -148,6 +149,56 @@
   /* «с вчера» подпись в задаче */
   .item .t-wrap{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
   .item .carried{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;letter-spacing:.02em}
+
+  /* ── приоритеты чеклиста ─────────────────────────────────── */
+  .add select{
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;
+    padding:12px 8px;color:var(--text);font-family:'JetBrains Mono',monospace;
+    font-size:12px;color-scheme:dark;flex-shrink:0;cursor:pointer;max-width:118px;
+  }
+  .add select:focus{outline:none;border-color:var(--peri)}
+  .add select:disabled{opacity:.5}
+
+  .pgroup{margin-bottom:6px}
+  .pgroup[data-priority="high"]{--pcol:var(--sport)}
+  .pgroup[data-priority="medium"]{--pcol:var(--dawn)}
+  .pgroup[data-priority="low"]{--pcol:var(--muted)}
+  .pgroup-head{
+    display:flex;align-items:center;gap:8px;margin:8px 4px 5px;
+    font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  .pgroup-head .pdot{width:6px;height:6px;border-radius:50%;background:var(--pcol);flex-shrink:0}
+  .pgroup-head .pname{color:var(--pcol)}
+  .pgroup-head .pcnt{margin-left:auto;opacity:.65}
+  .pgroup-body{
+    display:flex;flex-direction:column;gap:2px;min-height:40px;
+    border-radius:12px;transition:background .15s,box-shadow .15s;
+  }
+  /* пустая группа всё равно принимает перетаскивание */
+  .pgroup-body:empty::after{
+    content:"перетащи сюда";display:flex;align-items:center;justify-content:center;
+    height:40px;font-family:'JetBrains Mono',monospace;font-size:11px;
+    color:var(--muted);opacity:.4;
+  }
+  .pgroup-body.drop-active{background:rgba(240,184,102,.06);box-shadow:inset 0 0 0 1px var(--line)}
+
+  /* ручка перетаскивания: touch-action:none — чтобы палец тянул задачу,
+     а не скроллил страницу. Сам список при этом скроллится как обычно. */
+  .item .grip{
+    width:24px;flex-shrink:0;display:grid;place-items:center;color:var(--muted);
+    opacity:.45;cursor:grab;touch-action:none;align-self:stretch;
+  }
+  .item .grip svg{width:14px;height:14px;pointer-events:none}
+  .item .grip:active{cursor:grabbing}
+  @media (hover:hover){.item:hover .grip{opacity:.8}}
+  .item.dragging{opacity:.3}
+  .drag-ghost{
+    position:fixed;z-index:60;pointer-events:none;left:0;top:0;
+    background:var(--surface-2);border:1px solid var(--line);border-radius:11px;
+    box-shadow:0 14px 34px rgba(0,0,0,.5);opacity:.96;
+  }
+  .drag-ghost .grip{opacity:.8}
 
   /* note */
   .note{margin-top:30px;padding:16px 18px;border-radius:14px;background:var(--surface);border:1px dashed var(--line);color:var(--muted);font-size:14px;line-height:1.5;font-style:italic}
@@ -319,6 +370,11 @@
     <div class="list rise" id="list" style="animation-delay:.18s"></div>
     <div class="add rise" id="addRow" style="animation-delay:.2s">
       <input id="addInput" type="text" placeholder="Добавить дело…" autocomplete="off">
+      <select id="addPriority" aria-label="Приоритет нового дела">
+        <option value="high">Высокий</option>
+        <option value="medium" selected>Средний</option>
+        <option value="low">Низкий</option>
+      </select>
       <button id="addBtn" aria-label="Добавить">+</button>
     </div>
   </div>
