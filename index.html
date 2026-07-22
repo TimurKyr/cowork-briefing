@@ -40,9 +40,18 @@
     min-height:100vh;
     padding:calc(env(safe-area-inset-top) + 26px) 20px calc(env(safe-area-inset-bottom) + 40px);
     max-width:480px;margin:0 auto;
-    background:
-      radial-gradient(120% 60% at 50% -10%, rgba(240,184,102,.10), transparent 60%),
-      var(--base);
+    background:transparent;   /* фон рисует html + слой body::before */
+  }
+  /* Фоновое свечение — отдельный фиксированный слой во всю ширину окна.
+     Если рисовать градиент на самом body, он обрезается по краям
+     центрированной колонки и по бокам видны швы. */
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:-1;
+    pointer-events:none;
+    background:radial-gradient(120% 60% at 50% -10%, rgba(240,184,102,.10), transparent 60%);
   }
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   .rise{animation:rise .5s ease both}
@@ -180,10 +189,12 @@
       align-items:start;
       max-width:1160px;
       padding:56px 40px 72px;
+    }
+    /* на широком экране свечение мягче и смещено к колонкам */
+    body::before{
       background:
-        radial-gradient(70% 50% at 18% -5%, rgba(240,184,102,.13), transparent 62%),
-        radial-gradient(55% 45% at 100% 0%, rgba(138,156,240,.07), transparent 60%),
-        var(--base);
+        radial-gradient(60% 55% at 22% -5%, rgba(240,184,102,.13), transparent 62%),
+        radial-gradient(50% 45% at 88% 0%, rgba(138,156,240,.07), transparent 60%);
     }
     /* обёртки снова становятся обычными колонками */
     .col-side,.col-main{display:flex;flex-direction:column;min-width:0}
@@ -229,10 +240,9 @@
     #timeline{margin-bottom:26px}
     #list{margin-bottom:14px}
     #deadlines{margin-bottom:12px}
-    /* форма-«компоновщик» уже панелей — так она читается как поле ввода,
-       а не как пустая секция, когда дедлайнов ещё нет */
-    #dlAdd{margin-bottom:30px;max-width:560px}
-    #addRow{max-width:560px}
+    /* формы добавления — во всю ширину колонки, вровень с панелями
+       «План» и «Чеклист» */
+    #dlAdd{margin-bottom:30px}
 
     /* строки внутри панелей чуть просторнее */
     .block{padding:13px 14px}
