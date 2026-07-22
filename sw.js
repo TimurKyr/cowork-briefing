@@ -5,10 +5,10 @@
    первым (network-first) с откатом на последний закэшированный
    ответ, чтобы офлайн показывал последний известный день.
 
-   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v4 → v5),
+   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v5 → v6),
    иначе пользователи залипнут на старой версии. */
 
-const CACHE = "myday-shell-v5";
+const CACHE = "myday-shell-v6";
 const SHELL = [
   ".",
   "index.html",
@@ -21,7 +21,13 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // ВАЖНО: cache:"reload" — иначе addAll возьмёт файлы из HTTP-кеша браузера
+  // (GitHub Pages отдаёт HTML с max-age) и новый SW закэширует СТАРУЮ оболочку.
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -68,9 +74,11 @@ self.addEventListener("fetch", (e) => {
   }
 
   // Своя оболочка: cache-first + фоновое обновление кеша (stale-while-revalidate).
+  // Ревалидация идёт с cache:"no-cache", иначе HTTP-кеш вернёт ту же старую
+  // копию и обновление никогда не доедет до пользователя.
   e.respondWith(
     caches.match(req).then((cached) => {
-      const network = fetch(req)
+      const network = fetch(cached ? new Request(req.url, { cache: "no-cache" }) : req)
         .then((res) => {
           if (res && res.ok) {
             const copy = res.clone();
