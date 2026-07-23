@@ -131,8 +131,8 @@
   .nownext{margin:-8px 2px 22px;font-size:14px;line-height:1.45;color:var(--muted);font-weight:500}
   .nownext .cur{color:var(--text)}
   .nownext .nx{color:var(--text)}
-  .nownext .at{font-family:'JetBrains Mono',monospace;color:var(--dawn)}
-  .nownext .free{color:var(--dawn)}
+  .nownext .at{font-family:'JetBrains Mono',monospace;color:var(--tag,var(--dawn))}
+  .nownext .free{color:var(--tag,var(--dawn))}
 
   /* deadlines */
   .deadlines{display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
@@ -228,11 +228,11 @@
     background:linear-gradient(160deg,var(--surface-2),var(--surface));
     border:1px solid var(--line);border-radius:18px;position:relative;overflow:hidden;
   }
-  .modal-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dawn)}
+  .modal-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--tag,var(--dawn))}
   .modal-head{padding:20px 46px 14px 20px;border-bottom:1px solid var(--line)}
   .modal-title{font-family:'Fraunces',serif;font-weight:500;font-size:22px;line-height:1.15;letter-spacing:-.01em}
   .modal-meta{margin-top:8px;color:var(--muted);font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .modal-meta .m-time{font-family:'JetBrains Mono',monospace;color:var(--dawn)}
+  .modal-meta .m-time{font-family:'JetBrains Mono',monospace;color:var(--tag,var(--dawn))}
   .modal-body{padding:16px 20px 22px;overflow-y:auto;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
   .modal-close{
     position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:9px;

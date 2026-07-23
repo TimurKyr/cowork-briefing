@@ -75,6 +75,29 @@ const toMin = (t) => { const [h, m] = String(t).split(":").map(Number); return h
 const KNOWN_KINDS = ["work", "study", "sport", "break", "hobby", "other"];
 const kindVar = (k) => (KNOWN_KINDS.includes(k) ? k : "other");
 
+// Официальная палитра цветов событий Google Calendar (colorId 1–11 → hex).
+const GCAL_EVENT_COLORS = {
+  1: "#7986cb",   // Lavender
+  2: "#33b679",   // Sage
+  3: "#8e24aa",   // Grape
+  4: "#e67c73",   // Flamingo
+  5: "#f6c026",   // Banana
+  6: "#f5511d",   // Tangerine
+  7: "#039be5",   // Peacock
+  8: "#616161",   // Graphite
+  9: "#3f51b5",   // Blueberry
+  10: "#0b8043",  // Basil
+  11: "#d60000",  // Tomato
+};
+
+// Цвет блока таймлайна: если задан валидный colorId из палитры Google —
+// конкретный hex; иначе — текущий цвет по kind через CSS-переменную.
+function resolveBlockColor(block) {
+  const id = block && block.colorId != null ? Number(block.colorId) : NaN;
+  if (Number.isInteger(id) && GCAL_EVENT_COLORS[id]) return GCAL_EVENT_COLORS[id];
+  return `var(--${kindVar(block && block.kind)})`;
+}
+
 const WEEKDAYS = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
 const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -286,6 +309,9 @@ function renderNowNext() {
     html = `<span class="free">На сегодня всё</span>`;
   }
   el.innerHTML = html;
+  // Акцент строки красим цветом текущего блока (если он есть), иначе — dawn.
+  if (current) el.style.setProperty("--tag", resolveBlockColor(current));
+  else el.style.removeProperty("--tag");
   el.classList.remove("hidden");
 }
 
@@ -366,7 +392,7 @@ function renderPlan() {
     const el = document.createElement("div");
     el.className = "block";
     el.dataset.state = stateName;
-    el.style.setProperty("--tag", `var(--${kindVar(b.kind)})`);
+    el.style.setProperty("--tag", resolveBlockColor(b));
     const loc = b.location
       ? `<div class="b-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${escapeHtml(b.location)}</div>`
       : "";
@@ -423,6 +449,9 @@ function openBlockModal(b, range) {
 
   // тело: описание как есть, с сохранением переносов строк (textContent + white-space:pre-wrap)
   bodyEl.textContent = b.description;
+
+  // акцент модалки (полоска + время) — цветом того же блока
+  overlay.querySelector(".modal-card").style.setProperty("--tag", resolveBlockColor(b));
 
   modalPrevFocus = document.activeElement;
   overlay.classList.remove("hidden");

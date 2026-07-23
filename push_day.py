@@ -30,9 +30,11 @@ def main():
         "updated_at": now.isoformat(timespec="seconds"),
         "timeline": [
             {"start": "08:00", "end": "12:00", "title": "Работа — Nomad Insurance", "location": "офис, Абая 12", "kind": "work",
+             "colorId": 7,  # Peacock #039be5 — перекрывает цвет по kind
              "description": "Стендап в 09:30 по Zoom.\nЗакрыть тикет NB-142 и собрать отчёт по кампании.\nПеред обедом — созвон с Жомартом."},
             {"start": "12:30", "end": "14:00", "title": "Обед и отдых", "kind": "break"},
             {"start": "14:00", "end": "16:00", "title": "Учёба — лаба по БД", "location": "дом", "kind": "study",
+             "colorId": 11,  # Tomato #d60000
              "description": "Тема: индексы и планы запросов.\nСдать лабу №5 до 18:00 — не забыть приложить EXPLAIN ANALYZE."},
             {"start": "17:00", "end": "18:30", "title": "Теннис", "location": "корты Достык", "kind": "sport"},
             {"start": "20:00", "end": "21:00", "title": "Пианино", "kind": "hobby"},
