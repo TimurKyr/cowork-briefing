@@ -371,16 +371,80 @@ function renderPlan() {
       ? `<div class="b-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${escapeHtml(b.location)}</div>`
       : "";
     const range = b.end ? `${b.start}–${b.end}` : `${b.start}`;
+    const hasDesc = typeof b.description === "string" && b.description.trim() !== "";
     el.innerHTML = `
       <div class="time">${escapeHtml(b.start || "")}</div>
       <div class="body">
-        <div class="b-title">${escapeHtml(b.title || "")}</div>
+        <div class="b-title">${escapeHtml(b.title || "")}${hasDesc ? '<span class="b-more" aria-hidden="true"></span>' : ""}</div>
         ${loc}
         <div class="b-range">${escapeHtml(range)}</div>
         ${stateName === "now" ? `<div class="now-flag"><span class="now-pulse"></span>сейчас</div>` : ""}
       </div>`;
+    // Блок с непустым описанием — кликабельный и открывает модалку.
+    // Без описания ведёт себя как раньше (без реакции на тап).
+    if (hasDesc) {
+      el.classList.add("has-desc");
+      el.tabIndex = 0;
+      el.setAttribute("role", "button");
+      el.setAttribute("aria-label", `${b.title || "Событие"} — открыть описание`);
+      const open = () => openBlockModal(b, range);
+      el.addEventListener("click", open);
+      el.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); }
+      });
+    }
     timeline.appendChild(el);
   });
+}
+
+/* ── модалка описания события ──────────────────────────────── */
+let modalPrevFocus = null;
+
+function openBlockModal(b, range) {
+  const overlay = document.getElementById("modal");
+  const titleEl = document.getElementById("modalTitle");
+  const metaEl = document.getElementById("modalMeta");
+  const bodyEl = document.getElementById("modalBody");
+
+  titleEl.textContent = b.title || "Событие";
+
+  // подзаголовок: время + место (если есть)
+  metaEl.innerHTML = "";
+  const timePart = document.createElement("span");
+  timePart.className = "m-time";
+  timePart.textContent = range;
+  metaEl.appendChild(timePart);
+  if (b.location) {
+    const dot = document.createElement("span"); dot.className = "dot"; metaEl.appendChild(dot);
+    const locPart = document.createElement("span");
+    locPart.textContent = b.location;
+    metaEl.appendChild(locPart);
+  }
+
+  // тело: описание как есть, с сохранением переносов строк (textContent + white-space:pre-wrap)
+  bodyEl.textContent = b.description;
+
+  modalPrevFocus = document.activeElement;
+  overlay.classList.remove("hidden");
+  overlay.classList.add("open");
+  document.body.style.overflow = "hidden";       // фон не скроллится под модалкой
+  document.getElementById("modalClose").focus();
+  document.addEventListener("keydown", onModalKey);
+}
+
+function closeModal() {
+  const overlay = document.getElementById("modal");
+  if (overlay.classList.contains("hidden")) return;
+  overlay.classList.remove("open");
+  overlay.classList.add("hidden");
+  document.body.style.overflow = "";
+  document.removeEventListener("keydown", onModalKey);
+  if (modalPrevFocus && typeof modalPrevFocus.focus === "function") modalPrevFocus.focus();
+  modalPrevFocus = null;
+}
+
+function onModalKey(e) {
+  if (e.key === "Escape") { e.preventDefault(); closeModal(); }
 }
 
 /* ── чеклист с приоритетами ────────────────────────────────── */
@@ -689,6 +753,12 @@ document.getElementById("addBtn").onclick = addTask;
 document.getElementById("addInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addTask(); });
 document.getElementById("dlBtn").onclick = addDeadline;
 document.getElementById("dlTitle").addEventListener("keydown", (e) => { if (e.key === "Enter") addDeadline(); });
+
+// Модалка описания: крестик и клик по затемнённому фону (но не по самой карточке).
+document.getElementById("modalClose").onclick = closeModal;
+document.getElementById("modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeModal();
+});
 
 // Сразу рисуем последнее сохранённое (мгновенный старт), затем тихо обновляем из сети.
 (function hydrateFromCache() {
