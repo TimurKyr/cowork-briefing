@@ -92,6 +92,12 @@
   .block .b-more{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--tag,var(--dawn));vertical-align:middle;margin-left:8px;opacity:.85}
   .block.has-desc:focus-visible{outline:2px solid var(--peri);outline-offset:2px}
   @media (hover:hover){.block.has-desc:hover{background:var(--surface)}}
+  /* свободное время: меньше веса, пунктирная бледная полоска, приглушённый текст */
+  .block.free{cursor:default}
+  .block.free .body{border-left-style:dashed;border-left-color:var(--line);opacity:.9}
+  .block.free .b-title{font-weight:400;color:var(--muted)}
+  .block.free .time{opacity:.6}
+  .block.free .b-range{opacity:.8}
   .block .b-loc{font-size:12px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:5px}
   .block .b-loc svg{width:11px;height:11px;flex-shrink:0;opacity:.8}
   .block .b-range{font-size:12px;color:var(--muted);margin-top:2px;font-family:'JetBrains Mono',monospace}

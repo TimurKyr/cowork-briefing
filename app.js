@@ -90,9 +90,12 @@ const GCAL_EVENT_COLORS = {
   11: "#d60000",  // Tomato
 };
 
-// Цвет блока таймлайна: если задан валидный colorId из палитры Google —
-// конкретный hex; иначе — текущий цвет по kind через CSS-переменную.
+const isFreeBlock = (block) => block && block.kind === "free";
+
+// Цвет блока таймлайна: свободное время — приглушённый muted; иначе валидный
+// colorId из палитры Google → hex; иначе — текущий цвет по kind (CSS-переменная).
 function resolveBlockColor(block) {
+  if (isFreeBlock(block)) return "var(--muted)";
   const id = block && block.colorId != null ? Number(block.colorId) : NaN;
   if (Number.isInteger(id) && GCAL_EVENT_COLORS[id]) return GCAL_EVENT_COLORS[id];
   return `var(--${kindVar(block && block.kind)})`;
@@ -308,7 +311,11 @@ function renderNowNext() {
   if (!blocks.length) { el.classList.add("hidden"); return; }
 
   const now = nowMin();
-  const sorted = blocks.slice().sort((a, b) => toMin(a.start || "00:00") - toMin(b.start || "00:00"));
+  // free-блоки — не занятия: в расчёте «сейчас/дальше» учитываем только реальные события.
+  const sorted = blocks.slice()
+    .filter((b) => !isFreeBlock(b))
+    .sort((a, b) => toMin(a.start || "00:00") - toMin(b.start || "00:00"));
+  if (!sorted.length) { el.classList.add("hidden"); return; }
   const current = sorted.find((b) => {
     const s = toMin(b.start || "00:00"), e = toMin(b.end || b.start || "00:00");
     return now >= s && now < e;
@@ -406,16 +413,21 @@ function renderPlan() {
   blocks.slice().sort((a, b) => toMin(a.start || "00:00") - toMin(b.start || "00:00")).forEach((b) => {
     const s = toMin(b.start || "00:00");
     const e = toMin(b.end || b.start || "00:00");
-    const stateName = now >= e ? "past" : (now >= s && now < e ? "now" : "future");
+    const free = isFreeBlock(b);
+    // free-блок не бывает «сейчас»: даже если время внутри него, это не занятие.
+    // Прошедший — приглушаем как обычно, текущий/будущий — нейтральный «future».
+    const stateName = free
+      ? (now >= e ? "past" : "future")
+      : (now >= e ? "past" : (now >= s && now < e ? "now" : "future"));
     const el = document.createElement("div");
-    el.className = "block";
+    el.className = "block" + (free ? " free" : "");
     el.dataset.state = stateName;
     el.style.setProperty("--tag", resolveBlockColor(b));
     const loc = b.location
       ? `<div class="b-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${escapeHtml(b.location)}</div>`
       : "";
     const range = b.end ? `${b.start}–${b.end}` : `${b.start}`;
-    const hasDesc = typeof b.description === "string" && b.description.trim() !== "";
+    const hasDesc = !free && typeof b.description === "string" && b.description.trim() !== "";
     el.innerHTML = `
       <div class="time">${escapeHtml(b.start || "")}</div>
       <div class="body">
