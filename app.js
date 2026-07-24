@@ -128,6 +128,24 @@ function plDays(n) {
   if (b === 1) return "день";
   return "дней";
 }
+// Календарная дата (Алматы) из ISO-таймстампа → "YYYY-MM-DD".
+function almatyDateOf(iso) {
+  try { return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(iso)); }
+  catch { return null; }
+}
+// Возраст задачи в днях по created_at (Алматы). Нет created_at — считаем по date.
+function taskAgeDays(task) {
+  const src = task.created_at ? almatyDateOf(task.created_at) : (task.date || null);
+  if (!src) return 0;
+  return -dayDiff(src);   // dayDiff(прошлое) отрицателен → возраст положителен
+}
+// Подпись возраста под задачей: {text, accent} или null (создана сегодня).
+function taskAgeLabel(task) {
+  const age = taskAgeDays(task);
+  if (age <= 0) return null;
+  const text = age === 1 ? "⤷ со вчера" : `⤷ ${age} ${plDays(age)} назад`;
+  return { text, accent: age >= 7 };   // от недели — акцентный цвет
+}
 
 /* ── состояние + локальный кэш ─────────────────────────────── */
 const CACHE_KEY = "myday-cache-v1";
@@ -494,15 +512,16 @@ const tasksOf = (priority) =>
 const GRIP_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>`;
 
 function taskEl(task) {
-  const carried = task.date && task.date < state.date;
+  const age = taskAgeLabel(task);   // подпись реального возраста (или null, если создана сегодня)
   const el = document.createElement("div");
   el.className = "item" + (task.done ? " done" : "") + (task._pending ? " pending" : "");
   el.dataset.id = String(task.id);
   el.innerHTML =
     `<div class="box"><svg viewBox="0 0 24 24" fill="none" stroke="#14131f" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg></div>
-     <div class="t-wrap"><div class="t"></div>${carried ? `<div class="carried">⤷ с вчера</div>` : ""}</div>
+     <div class="t-wrap"><div class="t"></div>${age ? `<div class="carried${age.accent ? " aged" : ""}"></div>` : ""}</div>
      <div class="grip" aria-label="Перетащить">${GRIP_SVG}</div>`;
   el.querySelector(".t").textContent = task.text;
+  if (age) el.querySelector(".carried").textContent = age.text;
   el.addEventListener("click", (e) => {
     if (e.target.closest(".grip")) return;   // ручка не переключает отметку
     if (justDragged) return;                 // клик сразу после перетаскивания игнорируем
