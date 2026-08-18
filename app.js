@@ -820,6 +820,27 @@ document.getElementById("modal").addEventListener("click", (e) => {
   if (e.target === e.currentTarget) closeModal();
 });
 
+// ── переключатель светлой/тёмной темы ──
+// Начальную тему уже выставил inline-скрипт в <head> (по сохранённому выбору
+// или системной). Здесь — только ручное переключение и синхронизация с системой.
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute("content", t === "light" ? "#f3efe6" : "#14131f");
+}
+document.getElementById("themeToggle").onclick = () => {
+  const t = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+  applyTheme(t);
+  try { localStorage.setItem("myday-theme", t); } catch { /* приватный режим */ }
+};
+// Пока пользователь не выбрал тему вручную — следуем системной.
+if (window.matchMedia) {
+  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", (e) => {
+    try { if (localStorage.getItem("myday-theme")) return; } catch { return; }
+    applyTheme(e.matches ? "light" : "dark");
+  });
+}
+
 // Сразу рисуем последнее сохранённое (мгновенный старт), затем тихо обновляем из сети.
 (function hydrateFromCache() {
   const c = loadCache();
