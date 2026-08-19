@@ -113,9 +113,10 @@
   .dot{width:3px;height:3px;border-radius:50%;background:var(--muted);display:inline-block}
 
   /* строка навигации по дням */
-  .topline{display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-right:46px}
+  .topline{display:flex;align-items:center;gap:8px;margin-bottom:14px}
   .topline .grow{flex:1}
   .topline .eyebrow{white-space:nowrap}
+  #planHead{align-items:center}   /* кнопка обновления по центру строки */
   .icon-btn{
     width:34px;height:34px;flex-shrink:0;border-radius:9px;
     background:var(--surface);border:1px solid var(--line);color:var(--muted);
@@ -135,7 +136,6 @@
   #refreshBtn.loading svg{animation:spin .8s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   @media (prefers-reduced-motion:reduce){#refreshBtn.loading svg{animation:none}}
-  @media (min-width:900px){ .topline{padding-right:0} }
 
   /* focus card */
   .focus{
@@ -437,7 +437,7 @@
   /* ── переключатель темы ─────────────────────────────────────── */
   .theme-toggle{
     position:fixed;z-index:70;
-    top:calc(env(safe-area-inset-top) + 12px);right:14px;
+    bottom:calc(env(safe-area-inset-bottom) + 14px);right:14px;
     width:40px;height:40px;border-radius:11px;
     background:var(--surface);border:1px solid var(--line);color:var(--muted);
     display:grid;place-items:center;cursor:pointer;
@@ -449,7 +449,7 @@
   .theme-toggle .i-moon{display:none}
   :root[data-theme="light"] .theme-toggle .i-sun{display:none}
   :root[data-theme="light"] .theme-toggle .i-moon{display:block}
-  @media (min-width:900px){ .theme-toggle{top:20px;right:22px} }
+  @media (min-width:900px){ .theme-toggle{bottom:20px;right:22px} }
 </style>
 </head>
 <body>
@@ -464,7 +464,7 @@
        становятся настоящими колонками: слева «контекст», справа «дела». -->
   <div class="col-side">
     <header class="rise">
-      <!-- навигация по дням + обновление -->
+      <!-- навигация по дням (влияет только на раздел «План») -->
       <div class="topline">
         <button class="icon-btn" id="navPrev" type="button" aria-label="Предыдущий день">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
@@ -473,12 +473,8 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
         </button>
         <div class="eyebrow" id="dateline">—</div>
-        <span class="rel hidden" id="dateRel"></span>
         <span class="grow"></span>
         <button class="text-btn hidden" id="todayBtn" type="button">Сегодня</button>
-        <button class="icon-btn" id="refreshBtn" type="button" aria-label="Обновить">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-        </button>
       </div>
       <h1 class="greeting" id="greeting">Доброе утро,<br><em id="name">—</em></h1>
       <div class="subline" id="subline"></div>
@@ -511,7 +507,9 @@
 
     <div class="sec-head rise" id="planHead" style="animation-delay:.12s">
       <h2>План</h2>
-      <div class="meta" id="now-clock">—</div>
+      <button class="icon-btn" id="refreshBtn" type="button" aria-label="Обновить">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
     </div>
     <div class="timeline rise" id="timeline" style="animation-delay:.12s"></div>
 
