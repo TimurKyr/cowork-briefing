@@ -11,7 +11,7 @@ window.SUPABASE_ANON_KEY = "sb_publishable_GcWNGR5dZh34iIm0mlilIg_gg2EFJTi";
 
 // Тот же Google-ключ, что был у Drive. ВКЛЮЧИ на нём Google Calendar API
 // (Cloud Console → APIs & Services → Library → Google Calendar API → Enable).
-window.CALENDAR_API_KEY = "AIzaSyAjAS4NyVH7NpyxMjKB6Vm3WLjHhQ82jJI";
+window.CALENDAR_API_KEY = "AIzaSyAhPQbajrb8wiGCjuYG835rOCY0aL7Flho";
 
 // Сделай каждый календарь публичным (настройки календаря → «Доступ для всех» →
 // «Просматривать все данные о событиях»). colorId — предположительный, сверь.
