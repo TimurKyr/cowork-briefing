@@ -112,6 +112,31 @@
   .subline{color:var(--muted);font-size:14px;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .dot{width:3px;height:3px;border-radius:50%;background:var(--muted);display:inline-block}
 
+  /* строка навигации по дням */
+  .topline{display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-right:46px}
+  .topline .grow{flex:1}
+  .topline .eyebrow{white-space:nowrap}
+  .icon-btn{
+    width:34px;height:34px;flex-shrink:0;border-radius:9px;
+    background:var(--surface);border:1px solid var(--line);color:var(--muted);
+    display:grid;place-items:center;cursor:pointer;transition:color .15s,border-color .15s,background .15s;
+  }
+  .icon-btn svg{width:17px;height:17px}
+  .icon-btn:active{background:var(--surface-2)}
+  @media (hover:hover){.icon-btn:hover{color:var(--text);border-color:var(--dawn)}}
+  .text-btn{
+    flex-shrink:0;padding:7px 12px;border-radius:9px;
+    background:var(--surface-2);border:1px solid var(--line);color:var(--dawn);
+    font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
+  }
+  .text-btn:active{background:var(--surface)}
+  .rel{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.04em;color:var(--dawn);white-space:nowrap}
+  #refreshBtn.loading{pointer-events:none;opacity:.7}
+  #refreshBtn.loading svg{animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){#refreshBtn.loading svg{animation:none}}
+  @media (min-width:900px){ .topline{padding-right:0} }
+
   /* focus card */
   .focus{
     margin-bottom:28px;padding:18px 18px 16px;border-radius:16px;
@@ -439,20 +464,28 @@
        становятся настоящими колонками: слева «контекст», справа «дела». -->
   <div class="col-side">
     <header class="rise">
-      <div class="eyebrow" id="dateline">—</div>
+      <!-- навигация по дням + обновление -->
+      <div class="topline">
+        <button class="icon-btn" id="navPrev" type="button" aria-label="Предыдущий день">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+        <button class="icon-btn" id="navNext" type="button" aria-label="Следующий день">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <div class="eyebrow" id="dateline">—</div>
+        <span class="rel hidden" id="dateRel"></span>
+        <span class="grow"></span>
+        <button class="text-btn hidden" id="todayBtn" type="button">Сегодня</button>
+        <button class="icon-btn" id="refreshBtn" type="button" aria-label="Обновить">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+      </div>
       <h1 class="greeting" id="greeting">Доброе утро,<br><em id="name">—</em></h1>
       <div class="subline" id="subline"></div>
     </header>
 
-    <!-- строка «сейчас / дальше» — появляется, если есть таймлайн -->
+    <!-- строка «сейчас / дальше» — появляется, если есть таймлайн и день сегодняшний -->
     <div class="nownext rise hidden" id="nownext" style="animation-delay:.04s"></div>
-
-    <div class="focus rise" id="focusCard" style="animation-delay:.05s">
-      <div class="label">Фокус дня</div>
-      <div class="text" id="focus">—</div>
-    </div>
-
-    <div class="note rise hidden" id="note" style="animation-delay:.24s"></div>
 
     <footer class="rise" style="animation-delay:.28s" id="footer">—</footer>
   </div>
@@ -460,11 +493,8 @@
   <div class="col-main">
     <div class="banner hidden" id="banner"></div>
 
-    <!-- пустой стейт, когда данных дня за сегодня ещё нет -->
-    <div class="empty hidden" id="emptyState">
-      <strong>План на сегодня ещё формируется</strong>
-      Загляни чуть позже — утренний агент скоро запишет расписание и фокус дня.
-    </div>
+    <!-- пустой стейт / загрузка (текст ставит app.js) -->
+    <div class="empty hidden" id="emptyState"></div>
 
     <!-- Дедлайны: заголовок и список рисуются, только если есть незакрытые.
          Форма добавления видна всегда — это вход в постоянный список. -->

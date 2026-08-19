@@ -1,14 +1,11 @@
 /* Service worker: мгновенная загрузка оболочки (cache-first) и офлайн.
-   Данные Supabase НЕ кэшируем здесь — свежесть данных обеспечивает
-   app.js через localStorage (stale-while-revalidate). День теперь
-   читается из Google Drive (googleapis.com/drive/v3/...) — сеть-
-   первым (network-first) с откатом на последний закэшированный
-   ответ, чтобы офлайн показывал последний известный день.
+   Данные (Supabase, Google Calendar API, Open-Meteo) кэшем оболочки НЕ
+   трогаем — их свежесть обеспечивает app.js (localStorage + перезапрос).
 
-   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v12 → v13),
+   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v13 → v14),
    иначе пользователи залипнут на старой версии. */
 
-const CACHE = "myday-shell-v13";
+const CACHE = "myday-shell-v14";
 const SHELL = [
   ".",
   "index.html",
@@ -44,28 +41,11 @@ self.addEventListener("fetch", (e) => {
 
   const url = new URL(req.url);
 
-  // Данные Supabase — всегда сеть, не трогаем (кэшем данных заведует app.js).
+  // Данные — всегда сеть, оболочка их не кэширует (свежесть ведёт app.js):
+  // Supabase, Google Calendar API, Open-Meteo.
   if (url.hostname.endsWith("supabase.co") || url.hostname.endsWith("supabase.in")) return;
-
-  // Google Drive API (день: files.list + files.get?alt=media) — сетевой-первый.
-  // Кэшируем по полному URL (включает имя файла на сегодня и fileId), чтобы
-  // офлайн отдал последний известный ответ. Если сети и кэша нет — запрос
-  // падает, и app.js оставляет день из localStorage.
-  if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/drive/")) {
-    const key = req.url;
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(key, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() => caches.match(key))
-    );
-    return;
-  }
+  if (url.hostname === "www.googleapis.com" && url.pathname.startsWith("/calendar/")) return;
+  if (url.hostname === "api.open-meteo.com") return;
 
   // Другой origin (например, шрифты Google) — сеть с мягким откатом в кэш.
   if (url.origin !== self.location.origin) {

@@ -1,15 +1,14 @@
 /* ─────────────────────────────────────────────────────────────
-   «Мой день» — два источника данных.
+   «Мой день» — сайт читает всё сам из браузера, без агента.
 
-   • Секция дня (day) — читается из Google Drive. Агент (Cowork) не
-     умеет обновлять существующие файлы, только создавать новые —
-     поэтому каждое утро он СОЗДАЁТ отдельный файл day-YYYY-MM-DD.json
-     (за сегодняшнюю дату) в заданной папке Drive. Сайт каждый раз
-     ищет по имени файл за сегодня через Google Drive API (files.list
-     по папке+имени, затем files.get?alt=media) и читает его целиком.
-     Старые day-*.json просто остаются в папке — это ожидаемо.
-   • Задачи `tasks` и дедлайны `deadlines` — по-прежнему в Supabase:
-     их читает и пишет браузер (у него доступ к supabase.co есть).
+   • События дня — напрямую из Google Calendar API (несколько
+     календарей из config, склеиваются и сортируются). Промежутки
+     свободного времени (>120 мин) считает сам сайт.
+   • Погода (только для сегодня) — Open-Meteo, без ключа.
+   • Задачи `tasks` и дедлайны `deadlines` — Supabase (чтение/запись).
+
+   Навигация: можно листать дни вперёд/назад (свайп / стрелки / кнопки).
+   «Сейчас», строка «сейчас/дальше» и погода — только когда открыт сегодня.
 
    ВРЕМЯ: всё «сегодня»/«сейчас» считается по Asia/Almaty (UTC+5),
    независимо от часового пояса устройства.
@@ -150,21 +149,44 @@ function taskAgeLabel(task) {
   return { text, accent: age >= 7 };   // от недели — акцентный цвет
 }
 
+// Прибавить дни к дате "YYYY-MM-DD" (через UTC, чтобы не задеть часовой пояс).
+function addDaysISO(iso, delta) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d) + delta * 86400000).toISOString().slice(0, 10);
+}
+// Относительная подпись выбранного дня к сегодня: «завтра», «через 3 дня» и т.п.
+// dayDiff(view) сравнивает с state.date (сегодня): будущее → положительно.
+function relLabel(viewISO) {
+  const d = dayDiff(viewISO);
+  if (d === 0) return null;
+  if (d === 1) return "завтра";
+  if (d === -1) return "вчера";
+  if (d > 1) return `через ${d} ${plDays(d)}`;
+  return `${Math.abs(d)} ${plDays(d)} назад`;
+}
+
 /* ── состояние + локальный кэш ─────────────────────────────── */
-const CACHE_KEY = "myday-cache-v1";
+const CACHE_KEY = "myday-cache-v2";
 const state = {
-  date: todayISO(),
-  day: null,          // строка days (или null)
-  tasks: [],          // сегодняшние + перенесённые
-  deadlines: [],      // незакрытые дедлайны
+  date: todayISO(),   // сегодня (Алматы) — точка отсчёта для возраста/дедлайнов
+  view: todayISO(),   // просматриваемая дата
+  day: null,          // { date, timeline: [...] } за просматриваемый день
+  weather: null,      // строка погоды (только для сегодня)
+  tasks: [],
+  deadlines: [],
   offline: false,     // последняя загрузка не удалась из-за сети → показываем кэш
+  loading: false,     // идёт запрос календаря/погоды
   hydrated: false,    // отрисовали хоть раз из кэша/сети
+  lastRefresh: null,  // время последнего успешного обновления (мс)
 };
+let loadToken = 0;    // защита от гонок при быстрой навигации
 
 function saveCache() {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({
-      date: state.date, day: state.day, tasks: state.tasks, deadlines: state.deadlines, savedAt: Date.now(),
+      view: state.view, day: state.day, weather: state.weather,
+      tasks: state.tasks, deadlines: state.deadlines,
+      lastRefresh: state.lastRefresh, savedAt: Date.now(),
     }));
   } catch { /* приватный режим / нет места — не критично */ }
 }
@@ -173,99 +195,197 @@ function loadCache() {
   catch { return null; }
 }
 
-/* ── день из Google Drive ─────────────────────────────────────
-   Файл называется day-YYYY-MM-DD.json и лежит в папке DRIVE_FOLDER_ID.
-   Агент только СОЗДАЁТ новый файл на новую дату (не обновляет старый),
-   поэтому сайт каждый раз ищет файл по имени заново — стабильного
-   fileId заранее нет.
+/* ── события из Google Calendar API ───────────────────────────
+   Для каждого календаря из config запрашиваем события выбранного дня
+   (по Asia/Almaty). kind и colorId берём от календаря-источника, не от
+   события. События на весь день (без времени) пропускаем. */
+const CAL_KEY = (typeof CALENDAR_API_KEY !== "undefined" && CALENDAR_API_KEY) ? CALENDAR_API_KEY : "";
+const CALS = (typeof CALENDARS !== "undefined" && Array.isArray(CALENDARS)) ? CALENDARS : [];
+const W_LAT = (typeof window !== "undefined" && window.LAT != null) ? window.LAT : null;
+const W_LON = (typeof window !== "undefined" && window.LON != null) ? window.LON : null;
 
-   Шаг 1 — files.list: находим id файла с нужным именем в нужной папке.
-   Шаг 2 — files.get?alt=media: скачиваем содержимое по этому id.
-   Оба запроса идут с restricted API-ключом (см. config.js), поэтому
-   папка должна быть расшарена «Все, у кого есть ссылка — Читатель». */
-const DRIVE_FOLDER = (typeof DRIVE_FOLDER_ID !== "undefined" && DRIVE_FOLDER_ID) ? DRIVE_FOLDER_ID : "";
-const DRIVE_KEY = (typeof DRIVE_API_KEY !== "undefined" && DRIVE_API_KEY) ? DRIVE_API_KEY : "";
+function eventToBlock(ev, cal, date) {
+  if (!ev.start || !ev.start.dateTime) return null;   // событие на весь день — пропускаем
+  let start = fmtAlmatyTime(ev.start.dateTime);
+  let end = ev.end && ev.end.dateTime ? fmtAlmatyTime(ev.end.dateTime) : start;
+  // событие могло начаться вчера / кончиться завтра — обрезаем к выбранному дню
+  if (almatyDateOf(ev.start.dateTime) < date) start = "00:00";
+  if (ev.end && ev.end.dateTime && almatyDateOf(ev.end.dateTime) > date) end = "23:59";
+  const descr = (typeof ev.description === "string" && ev.description.trim() !== "") ? ev.description : undefined;
+  return {
+    start, end,
+    title: ev.summary || "(без названия)",
+    location: ev.location || undefined,
+    description: descr,
+    kind: cal.kind || "other",
+    colorId: cal.colorId,
+  };
+}
 
-function driveListUrl(filename) {
-  const q = `'${DRIVE_FOLDER}' in parents and name = '${filename}' and trashed = false`;
-  const params = new URLSearchParams({
-    q, fields: "files(id,name)", key: DRIVE_KEY, spaces: "drive",
+async function fetchCalendarEvents(date) {
+  const timeMin = `${date}T00:00:00+05:00`;
+  const timeMax = `${date}T23:59:59+05:00`;
+  const settled = await Promise.allSettled(CALS.map(async (cal) => {
+    const params = new URLSearchParams({
+      key: CAL_KEY, singleEvents: "true", orderBy: "startTime",
+      timeMin, timeMax, timeZone: TZ,
+    });
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?${params.toString()}`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new HttpError(`Calendar ${cal.kind || cal.id} → ${res.status}`, res.status);
+    const json = await res.json();
+    const items = Array.isArray(json.items) ? json.items : [];
+    return items.map((ev) => eventToBlock(ev, cal, date)).filter(Boolean);
+  }));
+
+  const blocks = [];
+  let anyOk = false, firstErr = null;
+  settled.forEach((s) => {
+    if (s.status === "fulfilled") { anyOk = true; blocks.push(...s.value); }
+    else if (!firstErr) firstErr = s.reason;
   });
-  return `https://www.googleapis.com/drive/v3/files?${params.toString()}`;
-}
-function driveContentUrl(fileId) {
-  return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&key=${encodeURIComponent(DRIVE_KEY)}`;
-}
-
-async function fetchDay() {
-  const filename = `day-${state.date}.json`;
-  const listRes = await fetch(driveListUrl(filename), { cache: "no-store" });
-  if (!listRes.ok) throw new HttpError(`Drive files.list → ${listRes.status}`, listRes.status);
-  const listJson = await listRes.json();
-  const file = listJson && Array.isArray(listJson.files) ? listJson.files[0] : null;
-  if (!file) return null; // агент ещё не создал файл за сегодня
-
-  const contentRes = await fetch(driveContentUrl(file.id), { cache: "no-store" });
-  if (!contentRes.ok) throw new HttpError(`Drive files.get → ${contentRes.status}`, contentRes.status);
-  return contentRes.json();
+  if (!anyOk && firstErr) throw firstErr;   // все календари отвалились
+  blocks.sort((a, b) => toMin(a.start) - toMin(b.start));
+  return blocks;
 }
 
+// Вставляем псевдо-блоки свободного времени (>120 мин) МЕЖДУ событиями.
+function withFreeBlocks(events) {
+  const evs = events.slice().sort((a, b) => toMin(a.start) - toMin(b.start));
+  const out = [];
+  for (let i = 0; i < evs.length; i++) {
+    out.push(evs[i]);
+    const next = evs[i + 1];
+    if (next) {
+      const prevEnd = toMin(evs[i].end || evs[i].start);
+      const gap = toMin(next.start) - prevEnd;
+      if (gap > 120) out.push({ start: evs[i].end, end: next.start, title: "Свободно", kind: "free" });
+    }
+  }
+  return out;
+}
+
+/* ── погода из Open-Meteo (без ключа, только сегодня) ─────────── */
+const WMO = {
+  0: "ясно", 1: "малооблачно", 2: "переменная облачность", 3: "пасмурно",
+  45: "туман", 48: "туман",
+  51: "морось", 53: "морось", 55: "морось", 56: "морось", 57: "морось",
+  61: "дождь", 63: "дождь", 65: "сильный дождь", 66: "ледяной дождь", 67: "ледяной дождь",
+  71: "снег", 73: "снег", 75: "сильный снег", 77: "снежная крупа",
+  80: "ливень", 81: "ливень", 82: "сильный ливень",
+  85: "снегопад", 86: "снегопад",
+  95: "гроза", 96: "гроза с градом", 99: "гроза с градом",
+};
+async function fetchWeather() {
+  if (W_LAT == null || W_LON == null) return null;
+  const params = new URLSearchParams({
+    latitude: String(W_LAT), longitude: String(W_LON),
+    current: "temperature_2m,weather_code", timezone: TZ,
+  });
+  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, { cache: "no-store" });
+  if (!res.ok) throw new HttpError(`Weather → ${res.status}`, res.status);
+  const j = await res.json();
+  if (!j.current) return null;
+  const t = Math.round(j.current.temperature_2m);
+  const desc = WMO[j.current.weather_code] || "погода";
+  return `${desc}, ${t > 0 ? "+" : ""}${t}°`;
+}
+
+/* ── загрузка выбранного дня + задач/дедлайнов ────────────────── */
 async function load() {
-  const date = state.date;
+  const token = ++loadToken;
+  const view = state.view;
+  const isToday = view === state.date;
   const haveSB = Boolean(SB && KEY);
-  const haveDrive = Boolean(DRIVE_FOLDER && DRIVE_KEY);
-  const banners = [];
-  if (!haveSB) banners.push("SUPABASE_URL / SUPABASE_ANON_KEY — дела и дедлайны недоступны.");
-  if (!haveDrive) banners.push("DRIVE_FOLDER_ID / DRIVE_API_KEY — день (фокус/погода/таймлайн) недоступен.");
-  if (banners.length) showBanner("Не заполнен config.js: " + banners.join(" ") + " Открой config.js и вставь значения.");
+  const haveCal = Boolean(CAL_KEY && CALS.length);
 
-  let netError = false;  // сетевой сбой (offline) хотя бы на одном запросе
-  let apiError = false;  // реальная ошибка Supabase/Drive API
+  const cfg = [];
+  if (!haveCal) cfg.push("CALENDAR_API_KEY / CALENDARS — события недоступны.");
+  if (!haveSB) cfg.push("SUPABASE_URL / SUPABASE_ANON_KEY — дела и дедлайны недоступны.");
+  if (cfg.length) showBanner("Не заполнен config.js: " + cfg.join(" ") + " Открой config.js и вставь значения.");
 
-  // ── день из Google Drive (day-YYYY-MM-DD.json) ──
-  if (haveDrive) {
+  state.loading = true;
+  setRefreshing(true);
+  render();
+
+  let netError = false, calError = false, apiError = false;
+
+  // ── события календаря ──
+  if (haveCal) {
     try {
-      const dj = await fetchDay();
-      // Показываем день, только если файл именно за сегодня (Алматы). Иначе — пустой
-      // стейт «План на сегодня ещё формируется», а не устаревший день.
-      state.day = (dj && dj.date === date) ? dj : null;
+      const events = await fetchCalendarEvents(view);
+      if (token !== loadToken) return;               // навигация ушла вперёд — бросаем результат
+      state.day = { date: view, timeline: withFreeBlocks(events) };
     } catch (err) {
       console.error(err);
-      if (err instanceof TypeError) netError = true;  // нет сети — оставляем кэш дня
-      else state.day = null;                          // нет файла / битый JSON — пустой стейт
+      if (err instanceof TypeError) netError = true; // нет сети — оставляем прежнее
+      else { calError = true; state.day = { date: view, timeline: [] }; }
     }
   }
 
-  // ── задачи и дедлайны из Supabase (без изменений в логике) ──
+  // ── погода (только сегодня) ──
+  if (isToday) {
+    try {
+      const w = await fetchWeather();
+      if (token !== loadToken) return;
+      state.weather = w;
+    } catch (err) { console.error(err); if (err instanceof TypeError) netError = true; }
+  } else {
+    state.weather = null;
+  }
+
+  // ── задачи и дедлайны из Supabase ──
   if (haveSB) {
     try {
+      // Сегодня: задачи дня + невыполненные с прошлых дат. Другой день: только его задачи.
+      const tq = isToday
+        ? `tasks?or=(date.eq.${view},and(date.lt.${view},done.eq.false))&order=position.asc,created_at.asc`
+        : `tasks?date=eq.${view}&order=position.asc,created_at.asc`;
       const [tasks, deadlines] = await Promise.all([
-        // сегодняшние ИЛИ невыполненные с прошлых дат — видно сразу, не дожидаясь агента
-        // Порядок задаём позицией: группировка по приоритету — на клиенте
-        // (priority — text, серверная сортировка дала бы алфавитный порядок).
-        sbGet(`tasks?or=(date.eq.${date},and(date.lt.${date},done.eq.false))&order=position.asc,created_at.asc`),
+        sbGet(tq),
         sbGet(`deadlines?done=eq.false&order=due_date.asc,created_at.asc`),
       ]);
+      if (token !== loadToken) return;
       state.tasks = Array.isArray(tasks) ? tasks : [];
       state.deadlines = Array.isArray(deadlines) ? deadlines : [];
     } catch (err) {
       console.error(err);
-      // offline → оставляем кэш без красного баннера; иначе реальная ошибка API.
       if (err instanceof TypeError) netError = true;
       else apiError = true;
     }
   }
 
+  if (token !== loadToken) return;
+  state.loading = false;
   state.offline = netError;
   state.hydrated = true;
+  if (!netError) state.lastRefresh = Date.now();
+  setRefreshing(false);
+
   if (apiError) {
     showBanner("Не удалось получить дела/дедлайны из Supabase. Проверь URL/ключ, миграцию и политики RLS. Подробности — в консоли.");
-  } else if (haveSB && haveDrive && !netError) {
+  } else if (calError) {
+    showBanner("Не удалось получить события календаря. Проверь ключ, включённый Calendar API и что календари публичные.");
+  } else if (haveCal && haveSB && !netError && !cfg.length) {
     hideBanner();
   }
   saveCache();
   render();
 }
+
+function setRefreshing(on) {
+  const b = document.getElementById("refreshBtn");
+  if (b) b.classList.toggle("loading", on);
+}
+
+/* ── навигация по дням ───────────────────────────────────────── */
+function setView(dateISO) {
+  state.view = dateISO;
+  render();   // мгновенно перерисовываем шапку/состояние
+  load();     // и подгружаем данные за новый день
+}
+function shiftDay(delta) { setView(addDaysISO(state.view, delta)); }
+function goToday() { if (state.view !== state.date) setView(state.date); }
 
 /* ── рендер ────────────────────────────────────────────────── */
 function render() {
@@ -277,7 +397,15 @@ function render() {
 }
 
 function renderHeader() {
-  document.getElementById("dateline").textContent = dateLabel(state.date);
+  const isToday = state.view === state.date;
+  document.getElementById("dateline").textContent = dateLabel(state.view);
+
+  // относительная подпись + кнопка «Сегодня» (только когда не сегодня)
+  const rel = document.getElementById("dateRel");
+  const relTxt = relLabel(state.view);
+  if (relTxt) { rel.textContent = relTxt; rel.classList.remove("hidden"); }
+  else rel.classList.add("hidden");
+  document.getElementById("todayBtn").classList.toggle("hidden", isToday);
 
   const nameEl = document.getElementById("name");
   const greetingEl = document.getElementById("greeting");
@@ -285,21 +413,23 @@ function renderHeader() {
   greetingEl.firstChild.textContent = APP_NAME ? g + "," : g;
   nameEl.textContent = APP_NAME || "";
 
-  // subline: погода
+  // subline: погода — только для сегодня
   const sub = document.getElementById("subline");
   const parts = [];
-  if (state.day && state.day.weather) parts.push(state.day.weather);
+  if (isToday && state.weather) parts.push(state.weather);
   sub.innerHTML = parts.map((s, i) => (i ? '<span class="dot"></span>' : "") + `<span>${escapeHtml(s)}</span>`).join("");
 
-  // часы «сейчас»
-  const { h, m } = almatyHM();
-  document.getElementById("now-clock").textContent = "сейчас " + pad(h) + ":" + pad(m);
+  // часы «сейчас» в заголовке плана — только для сегодня
+  const clock = document.getElementById("now-clock");
+  if (isToday) { const { h, m } = almatyHM(); clock.textContent = "сейчас " + pad(h) + ":" + pad(m); }
+  else clock.textContent = "";
 
-  // футер: свежесть + офлайн
+  // футер: состояние загрузки / время обновления / офлайн
   const footer = document.getElementById("footer");
-  const upd = state.day && state.day.updated_at ? fmtAlmatyTime(state.day.updated_at) : null;
-  const isToday = state.day && state.day.date === state.date;
-  let base = (isToday && upd) ? `обновлено в ${upd}` : "ещё не обновлялось сегодня";
+  let base;
+  if (state.loading) base = "обновление…";
+  else if (state.lastRefresh) base = "обновлено в " + fmtAlmatyTime(new Date(state.lastRefresh).toISOString());
+  else base = "—";
   if (state.offline) base += " · офлайн";
   footer.textContent = base;
 }
@@ -307,6 +437,8 @@ function renderHeader() {
 // Строка «сейчас / дальше»
 function renderNowNext() {
   const el = document.getElementById("nownext");
+  // строка «сейчас/дальше» имеет смысл только для сегодняшнего дня
+  if (state.view !== state.date) { el.classList.add("hidden"); return; }
   const blocks = (state.day && Array.isArray(state.day.timeline)) ? state.day.timeline : [];
   if (!blocks.length) { el.classList.add("hidden"); return; }
 
@@ -380,45 +512,42 @@ function dlUrgency(diff) {
 
 function renderPlan() {
   const empty = document.getElementById("emptyState");
-  const focusCard = document.getElementById("focusCard");
   const planHead = document.getElementById("planHead");
   const timeline = document.getElementById("timeline");
-  const note = document.getElementById("note");
+  const isToday = state.view === state.date;
 
-  if (!state.day) {
-    empty.classList.remove("hidden");
-    focusCard.classList.add("hidden");
-    planHead.classList.add("hidden");
+  const dayReady = state.day && state.day.date === state.view;
+  const blocks = dayReady && Array.isArray(state.day.timeline) ? state.day.timeline : [];
+
+  planHead.classList.remove("hidden");
+
+  // загрузка нового дня без данных / пустой день
+  if (!blocks.length) {
     timeline.classList.add("hidden");
-    note.classList.add("hidden");
+    empty.classList.remove("hidden");
+    if (state.loading && !dayReady) {
+      empty.innerHTML = `<strong>Загрузка…</strong>Подтягиваю события выбранного дня.`;
+    } else {
+      empty.innerHTML = `<strong>На этот день событий нет</strong>Свободный день — ни одного события в календарях.`;
+    }
     return;
   }
   empty.classList.add("hidden");
-  focusCard.classList.remove("hidden");
-  planHead.classList.remove("hidden");
   timeline.classList.remove("hidden");
-
-  document.getElementById("focus").textContent = state.day.focus || "—";
-
-  if (state.day.note) { note.textContent = state.day.note; note.classList.remove("hidden"); }
-  else { note.classList.add("hidden"); }
 
   const now = nowMin();
   timeline.innerHTML = "";
-  const blocks = Array.isArray(state.day.timeline) ? state.day.timeline : [];
-  if (!blocks.length) {
-    timeline.innerHTML = `<div class="empty" style="margin:0">На сегодня событий в календаре нет — свободный день.</div>`;
-    return;
-  }
   blocks.slice().sort((a, b) => toMin(a.start || "00:00") - toMin(b.start || "00:00")).forEach((b) => {
     const s = toMin(b.start || "00:00");
     const e = toMin(b.end || b.start || "00:00");
     const free = isFreeBlock(b);
-    // free-блок не бывает «сейчас»: даже если время внутри него, это не занятие.
-    // Прошедший — приглушаем как обычно, текущий/будущий — нейтральный «future».
-    const stateName = free
-      ? (now >= e ? "past" : "future")
-      : (now >= e ? "past" : (now >= s && now < e ? "now" : "future"));
+    // Маркер «сейчас»/приглушение прошедшего — только для сегодня.
+    // Другие дни — просто события (нейтральный «future»). free никогда не «now».
+    const stateName = !isToday
+      ? "future"
+      : (free
+        ? (now >= e ? "past" : "future")
+        : (now >= e ? "past" : (now >= s && now < e ? "now" : "future")));
     const el = document.createElement("div");
     el.className = "block" + (free ? " free" : "");
     el.dataset.state = stateName;
@@ -731,13 +860,13 @@ async function addTask() {
   const group = tasksOf(priority);
   const position = group.length ? Math.min(...group.map(posOf)) - 1000 : 0;
 
-  const temp = { id: "temp-" + Date.now(), date: state.date, text: v, done: false,
+  const temp = { id: "temp-" + Date.now(), date: state.view, text: v, done: false,
                  carried_over: false, priority, position, _pending: true };
   state.tasks.push(temp);
   inp.value = ""; inp.disabled = true; btn.disabled = true; sel.disabled = true;
   renderList();
   try {
-    const rows = await sbInsert("tasks", { date: state.date, text: v, done: false,
+    const rows = await sbInsert("tasks", { date: state.view, text: v, done: false,
                                            carried_over: false, priority, position });
     const saved = rows && rows[0] ? rows[0] : null;
     const idx = state.tasks.indexOf(temp);
@@ -820,6 +949,39 @@ document.getElementById("modal").addEventListener("click", (e) => {
   if (e.target === e.currentTarget) closeModal();
 });
 
+// ── навигация по дням: кнопки, «Сегодня», обновление ──
+document.getElementById("navPrev").onclick = () => shiftDay(-1);
+document.getElementById("navNext").onclick = () => shiftDay(1);
+document.getElementById("todayBtn").onclick = goToday;
+document.getElementById("refreshBtn").onclick = () => { if (!state.loading) load(); };
+
+// стрелки клавиатуры (десктоп) — если фокус не в поле ввода и модалка закрыта
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const t = e.target;
+  if (t && t.closest && t.closest("input,select,textarea")) return;
+  if (!document.getElementById("modal").classList.contains("hidden")) return;
+  if (e.key === "ArrowLeft") shiftDay(-1); else shiftDay(1);
+});
+
+// свайп влево/вправо (мобильный) — листает дни
+let swipe = null;
+document.addEventListener("touchstart", (e) => {
+  if (drag || e.touches.length !== 1) { swipe = null; return; }
+  const t = e.touches[0];
+  if (t.target.closest && t.target.closest("input,select,textarea,button,.grip,.modal")) { swipe = null; return; }
+  swipe = { x: t.clientX, y: t.clientY };
+}, { passive: true });
+document.addEventListener("touchend", (e) => {
+  if (!swipe || drag) { swipe = null; return; }
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+  swipe = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.6) {
+    if (dx < 0) shiftDay(1); else shiftDay(-1);   // влево → следующий, вправо → предыдущий
+  }
+}, { passive: true });
+
 // ── переключатель светлой/тёмной темы ──
 // Начальную тему уже выставил inline-скрипт в <head> (по сохранённому выбору
 // или системной). Здесь — только ручное переключение и синхронизация с системой.
@@ -841,24 +1003,31 @@ if (window.matchMedia) {
   });
 }
 
-// Сразу рисуем последнее сохранённое (мгновенный старт), затем тихо обновляем из сети.
+// Сразу рисуем последнее сохранённое за сегодня (мгновенный старт), затем обновляем из сети.
 (function hydrateFromCache() {
   const c = loadCache();
-  if (c) {
-    // День из кэша показываем только если он за сегодня — иначе пустой стейт.
+  if (c && c.view === state.date) {   // кэш только для сегодняшнего дня
     state.day = (c.day && c.day.date === state.date) ? c.day : null;
+    state.weather = c.weather || null;
     state.tasks = Array.isArray(c.tasks) ? c.tasks : [];
     state.deadlines = Array.isArray(c.deadlines) ? c.deadlines : [];
+    state.lastRefresh = c.lastRefresh || null;
     state.hydrated = true;
     render();
   }
 })();
 
-// Каждую минуту: если сменились сутки (Алматы) — перечитываем; иначе двигаем «сейчас».
+// Каждую минуту: смена суток (Алматы) → перечитать; иначе двигать «сейчас» (если открыт сегодня).
 setInterval(() => {
   const t = todayISO();
-  if (t !== state.date) { state.date = t; load(); }
-  else { renderHeader(); renderNowNext(); renderPlan(); renderDeadlines(); }
+  if (t !== state.date) {
+    const wasToday = state.view === state.date;
+    state.date = t;
+    if (wasToday) state.view = t;
+    load();
+  } else if (state.view === state.date) {
+    renderHeader(); renderNowNext(); renderPlan();
+  }
 }, 60000);
 
 load();

@@ -1,40 +1,48 @@
 /* ─────────────────────────────────────────────────────────────
-   ШАБЛОН КОНФИГА. Скопируй этот файл в config.js и впиши свои
-   значения.
+   ШАБЛОН КОНФИГА. Скопируй в config.js и впиши свои значения.
 
      cp config.example.js config.js
 
-   ВАЖНО: сюда идут только anon (public) ключ Supabase и
-   ограниченный (restricted) API-ключ Google Drive — оба публичны
-   по назначению, их безопасно коммитить. НИКОГДА не вставляй сюда
-   service_role ключ Supabase или ключ Google без ограничений.
+   Сайт читает всё сам из браузера, без агента:
+   • события — Google Calendar API (публичные календари + API-ключ);
+   • погода — Open-Meteo (без ключа);
+   • дела и дедлайны — Supabase (anon-ключ).
+
+   Все ключи здесь ПУБЛИЧНЫЕ по назначению — их безопасно коммитить.
+   НИКОГДА не вставляй сюда service_role Supabase или Google-ключ без
+   ограничений по HTTP-referrer.
    ───────────────────────────────────────────────────────────── */
 
-// URL проекта, вида https://xxxxxxxxxxxx.supabase.co
-// Используется ТОЛЬКО для tasks/deadlines (их пишет браузер).
+/* ── Supabase (дела и дедлайны) ─────────────────────────────── */
 window.SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
-
-// anon / public ключ (Project Settings → API → Project API keys → anon public)
 window.SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
 
-/* ── День (фокус/погода/таймлайн) — из Google Drive ──────────
-   Агент каждое утро СОЗДАЁТ новый файл day-YYYY-MM-DD.json (за
-   сегодняшнюю дату) в этой папке Drive. Файл никогда не
-   перезаписывается — только создаётся новый на новую дату,
-   поэтому сайт каждый день ищет файл по имени заново.
+/* ── Google Calendar API (события дня) ───────────────────────
+   Тот же Google API-ключ, что и раньше, но с ВКЛЮЧЁННЫМ «Google
+   Calendar API» (Cloud Console → APIs & Services → Library). Ключ
+   ограничь по HTTP-referrer на домен сайта и по API — только
+   Calendar API (можно оставить и Drive, если он ещё где-то нужен).
 
-   Как заполнить:
-   1. Создай в Google Drive отдельную папку, например «Мой день».
-   2. Расшарь её: Поделиться → «Все, у кого есть ссылка» → Читатель.
-   3. ID папки — это часть ссылки после /folders/:
-      https://drive.google.com/drive/folders/ВОТ_ЭТО_ID
-   4. Создай в Google Cloud Console API-ключ, ограниченный:
-      - API restrictions → только Google Drive API;
-      - Application restrictions → HTTP referrers → домен сайта
-        (например https://<логин>.github.io/*).
-   5. Вставь оба значения ниже. */
-window.DRIVE_FOLDER_ID = "YOUR-DRIVE-FOLDER-ID";
-window.DRIVE_API_KEY = "YOUR-RESTRICTED-DRIVE-API-KEY";
+   Каждый календарь нужно сделать ПУБЛИЧНЫМ: настройки календаря →
+   «Доступ для всех» → «Просматривать все данные о событиях». ID
+   календаря — там же, в «Интеграция календаря».
 
-// Необязательно: имя для приветствия «Доброе утро, …». Пусто — без имени.
+   kind    — тип для цвета по умолчанию (work/study/sport/break/hobby/other);
+   colorId — число 1–11 из палитры Google (перебивает цвет по kind).
+   Значения colorId ниже — предположительные, сверь с реальными
+   цветами своих календарей и поправь. */
+window.CALENDAR_API_KEY = "YOUR-RESTRICTED-GOOGLE-API-KEY";
+window.CALENDARS = [
+  { id: "c_96e4afed3ecc27d931b77eeea843246f06757ee0d943de711220cff90bcad82b@group.calendar.google.com", kind: "other", colorId: 6 },  // Daily   — оранжевый (Tangerine)
+  { id: "c_ee9dc60ab32d1c6e5ba976f581144874e57e03d2597d2141559c8b44fae1e590@group.calendar.google.com", kind: "study", colorId: 3 },  // Study   — фиолетовый (Grape)
+  { id: "c_823a53d82cb5139cb97eea6592ec765aa5ceb6f9b2ff592d1fbac434108415ba@group.calendar.google.com", kind: "work",  colorId: 8 },  // Work    — графит (Graphite)
+  { id: "c_db1bacdbeb066159f1343428a49682b3104f12a77b647b95d5d884afbde67dc9@group.calendar.google.com", kind: "sport", colorId: 7 },  // Workout — синий (Peacock)
+];
+
+/* ── Погода (Open-Meteo, без ключа) ─────────────────────────
+   Координаты города. По умолчанию — Астана. */
+window.LAT = 51.16;
+window.LON = 71.47;
+
+/* Необязательно: имя для приветствия «Доброе утро, …». Пусто — без имени. */
 window.APP_NAME = "";
