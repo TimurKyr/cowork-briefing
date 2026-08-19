@@ -54,6 +54,7 @@
     --banner-bg:rgba(240,138,138,.10);
     --banner-border:rgba(240,138,138,.4);
     --line-hover:#3b3655;
+    --panel-bg:linear-gradient(160deg,rgba(38,35,56,.55),rgba(30,28,46,.30));  /* панель-карточка (десктоп) */
   }
   /* ── Светлая тема (рассвет днём: тёплая бумага + глубокие акценты) ── */
   :root[data-theme="light"]{
@@ -80,6 +81,7 @@
     --banner-bg:rgba(207,81,72,.10);
     --banner-border:rgba(207,81,72,.38);
     --line-hover:#cdc4b0;
+    --panel-bg:linear-gradient(160deg,rgba(255,255,255,.72),rgba(246,241,232,.45));
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{background:var(--base);color:var(--text);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
@@ -400,7 +402,7 @@
 
     /* содержимое правой колонки — карточки-панели */
     #deadlines,#timeline,#list{
-      background:linear-gradient(160deg,rgba(38,35,56,.55),rgba(30,28,46,.30));
+      background:var(--panel-bg);
       border:1px solid var(--line);
       border-radius:18px;
       padding:8px;
