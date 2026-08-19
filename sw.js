@@ -2,19 +2,19 @@
    Данные (Supabase, Google Calendar API, Open-Meteo) кэшем оболочки НЕ
    трогаем — их свежесть обеспечивает app.js (localStorage + перезапрос).
 
-   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v15 → v16),
+   ВАЖНО: при изменении файлов оболочки поднимай версию кеша (v16 → v17),
    иначе пользователи залипнут на старой версии. */
 
-const CACHE = "myday-shell-v16";
+const CACHE = "myday-shell-v17";
 const SHELL = [
   ".",
   "index.html",
   "app.js",
   "config.js",
   "manifest.json",
-  "icon-192.png",
-  "icon-512.png",
-  "apple-touch-icon.png",
+  "icon-192-v2.png",
+  "icon-512-v2.png",
+  "apple-touch-icon-v2.png",
 ];
 
 self.addEventListener("install", (e) => {

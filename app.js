@@ -574,6 +574,48 @@ function renderPlan() {
   });
 }
 
+/* ── безопасный рендер HTML-описания события ─────────────────
+   Разбираем строку в инертном <template> (скрипты не выполняются),
+   затем заново собираем DOM только из белого списка тегов. Ссылки
+   получают безопасный href (http/https/mailto/tel), target=_blank и
+   rel=noopener. Так HTML из календаря отображается красиво, без риска
+   инъекций. */
+const ALLOWED_TAGS = new Set(["A", "B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "SPAN", "UL", "OL", "LI"]);
+function safeHref(href) {
+  try {
+    const u = new URL(href, location.href);
+    if (["http:", "https:", "mailto:", "tel:"].includes(u.protocol)) return u.href;
+  } catch { /* мусорный href */ }
+  return null;
+}
+function sanitizeInto(container, html) {
+  const tpl = document.createElement("template");
+  tpl.innerHTML = String(html);
+  const clean = (src, dst) => {
+    src.childNodes.forEach((n) => {
+      if (n.nodeType === 3) {                    // текст
+        dst.appendChild(document.createTextNode(n.nodeValue));
+      } else if (n.nodeType === 1) {             // элемент
+        const tag = n.tagName;
+        if (ALLOWED_TAGS.has(tag)) {
+          const el = document.createElement(tag.toLowerCase());
+          if (tag === "A") {
+            const h = safeHref(n.getAttribute("href") || "");
+            if (h) { el.setAttribute("href", h); el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener noreferrer"); }
+          }
+          clean(n, el);
+          dst.appendChild(el);
+        } else {
+          clean(n, dst);                         // тег не в списке — оставляем только содержимое
+        }
+      }
+      // комментарии и прочее игнорируем
+    });
+  };
+  container.innerHTML = "";
+  clean(tpl.content, container);
+}
+
 /* ── модалка описания события ──────────────────────────────── */
 let modalPrevFocus = null;
 
@@ -598,8 +640,16 @@ function openBlockModal(b, range) {
     metaEl.appendChild(locPart);
   }
 
-  // тело: описание как есть, с сохранением переносов строк (textContent + white-space:pre-wrap)
-  bodyEl.textContent = b.description;
+  // тело: Google Calendar кладёт в описание HTML (<br>, <a>, <b>…). Если это
+  // похоже на HTML — рендерим безопасно (белый список тегов, кликабельные ссылки);
+  // иначе — как обычный текст с сохранением переносов.
+  if (/<[a-z][\s\S]*>/i.test(b.description)) {
+    bodyEl.classList.add("rich");
+    sanitizeInto(bodyEl, b.description);
+  } else {
+    bodyEl.classList.remove("rich");
+    bodyEl.textContent = b.description;
+  }
 
   // акцент модалки (полоска + время) — цветом того же блока
   overlay.querySelector(".modal-card").style.setProperty("--tag", resolveBlockColor(b));

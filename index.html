@@ -24,8 +24,8 @@
 </script>
 <title>Мой день</title>
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon-v2.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192-v2.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -315,6 +315,10 @@
   .modal-meta{margin-top:8px;color:var(--muted);font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .modal-meta .m-time{font-family:'JetBrains Mono',monospace;color:var(--tag,var(--dawn))}
   .modal-body{padding:16px 20px 22px;overflow-y:auto;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+  .modal-body.rich{white-space:normal}          /* HTML-описание: переносы из тегов, не из \n */
+  .modal-body.rich a{color:var(--tag,var(--dawn));text-decoration:underline;word-break:break-all}
+  .modal-body.rich p{margin:0 0 8px}
+  .modal-body.rich ul,.modal-body.rich ol{margin:4px 0 8px;padding-left:20px}
   .modal-close{
     position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:9px;
     background:var(--surface);border:1px solid var(--line);color:var(--muted);
